@@ -1,0 +1,6 @@
+{
+  "name": "MediTurnos - Turnero Digital para Especialistas de la Salud",
+  "description": "Plataforma de gestión de turnos para profesionales de la salud independientes en Argentina. Portal del paciente y agenda profesional.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
