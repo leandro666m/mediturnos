@@ -10,6 +10,8 @@ import {
   AlertCircle,
   HelpCircle,
   ShieldCheck,
+  Plus,
+  X,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Modalidad } from '../../../types';
@@ -40,6 +42,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
     patients,
     findPatientByDni,
     bookAppointment,
+    addCoverage,
   } = useApp();
 
   // Bloque 1: Paciente
@@ -63,10 +66,27 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
   const [nroAfiliado, setNroAfiliado] = useState('');
   const [motivo, setMotivo] = useState('');
 
+  // Modal para Agregar Obra Social / Prepaga
+  const [mostrarModalAgregarCobertura, setMostrarModalAgregarCobertura] = useState(false);
+  const [nuevaCoberturaNombre, setNuevaCoberturaNombre] = useState('');
+  const [errorNuevaCobertura, setErrorNuevaCobertura] = useState('');
+
   // Errores
   const [errores, setErrores] = useState<Record<string, string>>({});
 
   const servicioSeleccionado = services.find(s => s.id === servicioId) || services[0];
+
+  const handleGuardarNuevaCobertura = () => {
+    if (!nuevaCoberturaNombre.trim()) {
+      setErrorNuevaCobertura('Ingresá el nombre de la obra social o prepaga.');
+      return;
+    }
+    const creada = addCoverage(nuevaCoberturaNombre.trim());
+    setCoberturaId(creada.id);
+    setMostrarModalAgregarCobertura(false);
+    setNuevaCoberturaNombre('');
+    setErrorNuevaCobertura('');
+  };
 
   // Autocompletar datos al tipear el DNI (Regla 1.7)
   const handleDniChange = (val: string) => {
@@ -379,12 +399,34 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Obra Social / Prepaga
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Obra Social / Prepaga
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNuevaCoberturaNombre('');
+                    setErrorNuevaCobertura('');
+                    setMostrarModalAgregarCobertura(true);
+                  }}
+                  className="text-[11px] font-semibold text-sky-700 hover:text-sky-800 hover:underline flex items-center gap-0.5 cursor-pointer"
+                  title="Agregar una nueva obra social o prepaga al listado"
+                >
+                  <Plus className="w-3 h-3" /> Agregar
+                </button>
+              </div>
               <select
                 value={coberturaId}
-                onChange={e => setCoberturaId(e.target.value)}
+                onChange={e => {
+                  if (e.target.value === '__AGREGAR__') {
+                    setNuevaCoberturaNombre('');
+                    setErrorNuevaCobertura('');
+                    setMostrarModalAgregarCobertura(true);
+                    return;
+                  }
+                  setCoberturaId(e.target.value);
+                }}
                 className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none bg-white font-medium"
               >
                 {coverages.map(c => (
@@ -392,6 +434,9 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                     {c.nombre}
                   </option>
                 ))}
+                <option value="__AGREGAR__" className="text-sky-700 font-bold bg-sky-50">
+                  ➕ Agregar obra social / prepaga...
+                </option>
               </select>
             </div>
 
@@ -448,6 +493,72 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
         </div>
 
       </form>
+
+      {/* Modal para Agregar Nueva Obra Social / Prepaga */}
+      {mostrarModalAgregarCobertura && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-sky-600" />
+                <span>Agregar Obra Social / Prepaga</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setMostrarModalAgregarCobertura(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nombre de la Obra Social / Prepaga *
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={nuevaCoberturaNombre}
+                  onChange={e => {
+                    setNuevaCoberturaNombre(e.target.value);
+                    if (errorNuevaCobertura) setErrorNuevaCobertura('');
+                  }}
+                  placeholder="Ej. Medifé, Galeno, IOMA, PAMI, etc."
+                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleGuardarNuevaCobertura();
+                    }
+                  }}
+                />
+                {errorNuevaCobertura && (
+                  <p className="text-[11px] text-red-600 mt-1">{errorNuevaCobertura}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMostrarModalAgregarCobertura(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGuardarNuevaCobertura}
+                className="px-4 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-700 shadow-xs transition-colors cursor-pointer"
+              >
+                Guardar y Seleccionar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

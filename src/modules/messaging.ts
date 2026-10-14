@@ -120,7 +120,10 @@ export function estaEnHorarioDescanso(
 }
 
 /**
- * Genera el enlace oficial de wa.me codificado para abrir en WhatsApp (Fase 1)
+ * Genera el enlace oficial para abrir en WhatsApp (Fase 1)
+ * IMPORTANTE: Usa https://api.whatsapp.com/send directamente en vez del acortador wa.me
+ * para evitar el bug de redirección HTTP 302 de wa.me que corrompe caracteres UTF-8 multibyte
+ * (como emojis 🙋‍♂️, 📆, ⌚, 🩺, ⏰, 😉, 📍, 📂) transformándolos en caracteres de reemplazo .
  */
 export function construirEnlaceWhatsApp(telefonoRaw: string, mensaje: string): {
   url: string;
@@ -137,7 +140,7 @@ export function construirEnlaceWhatsApp(telefonoRaw: string, mensaje: string): {
   }
 
   const textoCodificado = encodeURIComponent(mensaje);
-  const url = `https://wa.me/${norm.e164SinPlus}?text=${textoCodificado}`;
+  const url = `https://api.whatsapp.com/send?phone=${norm.e164SinPlus}&text=${textoCodificado}`;
 
   return {
     url,

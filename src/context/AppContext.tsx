@@ -91,7 +91,34 @@ interface AppContextType {
   updateTemplates: (templates: MessageTemplate[]) => void;
   toggleAgendaPausa: () => void;
   findPatientByDni: (dni: string) => Patient | undefined;
+  addPatient: (data: {
+    dni: string;
+    nombre: string;
+    telefonoE164: string;
+    email?: string;
+    coverageId: string;
+    plan?: string;
+    nroAfiliado?: string;
+    notasInternas?: string;
+  }) => { success: boolean; patient?: Patient; error?: string };
+  updatePatient: (
+    id: string,
+    data: Partial<{
+      dni: string;
+      nombre: string;
+      telefonoE164: string;
+      email?: string;
+      coverageId: string;
+      plan?: string;
+      nroAfiliado?: string;
+      notasInternas?: string;
+    }>
+  ) => { success: boolean; patient?: Patient; error?: string };
   exportarCsvTurnos: (turnosAExportar: Appointment[]) => void;
+  addCoverage: (nombre: string) => Coverage;
+  updateCoverages: (coverages: Coverage[]) => void;
+  toggleHolidayLaborable: (holidayId: string) => void;
+  updateHolidays: (holidays: Holiday[]) => void;
   resetToDemoData: () => void;
 }
 
@@ -158,7 +185,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  const [coverages] = useState<Coverage[]>(INITIAL_COVERAGES);
+  const [coverages, setCoverages] = useState<Coverage[]>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_coverages`);
+      return saved ? JSON.parse(saved) : INITIAL_COVERAGES;
+    } catch {
+      return INITIAL_COVERAGES;
+    }
+  });
 
   const [patients, setPatients] = useState<Patient[]>(() => {
     try {
@@ -207,6 +241,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_KEY}_hours`, JSON.stringify(workingHours));
       localStorage.setItem(`${STORAGE_KEY}_holidays`, JSON.stringify(holidays));
       localStorage.setItem(`${STORAGE_KEY}_timeoffs`, JSON.stringify(timeOffs));
+      localStorage.setItem(`${STORAGE_KEY}_coverages`, JSON.stringify(coverages));
       localStorage.setItem(`${STORAGE_KEY}_patients`, JSON.stringify(patients));
       localStorage.setItem(`${STORAGE_KEY}_appointments`, JSON.stringify(appointments));
       localStorage.setItem(`${STORAGE_KEY}_notes`, JSON.stringify(notes));
@@ -214,7 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // Ignorar quota errors
     }
-  }, [professional, locations, services, workingHours, holidays, timeOffs, patients, appointments, notes, templates]);
+  }, [professional, locations, services, workingHours, holidays, timeOffs, coverages, patients, appointments, notes, templates]);
 
   // Limpieza periódica de Holds vencidos
   useEffect(() => {
@@ -290,6 +325,111 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const findPatientByDni = (dni: string): Patient | undefined => {
     const cleanDni = dni.replace(/\D/g, '');
     return patients.find(p => p.dni === cleanDni);
+  };
+
+  const addPatient = (data: {
+    dni: string;
+    nombre: string;
+    telefonoE164: string;
+    email?: string;
+    coverageId: string;
+    plan?: string;
+    nroAfiliado?: string;
+    notasInternas?: string;
+  }): { success: boolean; patient?: Patient; error?: string } => {
+    const cleanDni = data.dni.replace(/\D/g, '');
+    if (cleanDni.length < 7 || cleanDni.length > 8) {
+      return { success: false, error: 'DNI inválido (debe tener 7 u 8 dígitos).' };
+    }
+
+    const existe = patients.some(p => p.dni === cleanDni);
+    if (existe) {
+      return { success: false, error: `Ya existe un paciente registrado con el DNI ${cleanDni}.` };
+    }
+
+    const nuevoPaciente: Patient = {
+      id: 'pat_' + Math.random().toString(36).slice(2, 10),
+      professionalId: professional.id,
+      dni: cleanDni,
+      nombre: data.nombre.trim(),
+      telefonoE164: data.telefonoE164,
+      email: data.email?.trim(),
+      coverageId: data.coverageId,
+      plan: data.plan?.trim(),
+      nroAfiliado: data.nroAfiliado?.trim(),
+      notasInternas: data.notasInternas?.trim(),
+      creadoEn: new Date().toISOString(),
+    };
+
+    setPatients(prev => [nuevoPaciente, ...prev]);
+    return { success: true, patient: nuevoPaciente };
+  };
+
+  const updatePatient = (
+    id: string,
+    data: Partial<{
+      dni: string;
+      nombre: string;
+      telefonoE164: string;
+      email?: string;
+      coverageId: string;
+      plan?: string;
+      nroAfiliado?: string;
+      notasInternas?: string;
+    }>
+  ): { success: boolean; patient?: Patient; error?: string } => {
+    const pacienteActual = patients.find(p => p.id === id);
+    if (!pacienteActual) {
+      return { success: false, error: 'Paciente no encontrado.' };
+    }
+
+    let cleanDni = pacienteActual.dni;
+    if (data.dni) {
+      cleanDni = data.dni.replace(/\D/g, '');
+      if (cleanDni.length < 7 || cleanDni.length > 8) {
+        return { success: false, error: 'DNI inválido (debe tener 7 u 8 dígitos).' };
+      }
+      const existeOtro = patients.some(p => p.dni === cleanDni && p.id !== id);
+      if (existeOtro) {
+        return { success: false, error: `Ya existe otro paciente con el DNI ${cleanDni}.` };
+      }
+    }
+
+    const actualizado: Patient = {
+      ...pacienteActual,
+      dni: cleanDni,
+      nombre: data.nombre !== undefined ? data.nombre.trim() : pacienteActual.nombre,
+      telefonoE164: data.telefonoE164 !== undefined ? data.telefonoE164 : pacienteActual.telefonoE164,
+      email: data.email !== undefined ? data.email.trim() : pacienteActual.email,
+      coverageId: data.coverageId !== undefined ? data.coverageId : pacienteActual.coverageId,
+      plan: data.plan !== undefined ? data.plan.trim() : pacienteActual.plan,
+      nroAfiliado: data.nroAfiliado !== undefined ? data.nroAfiliado.trim() : pacienteActual.nroAfiliado,
+      notasInternas: data.notasInternas !== undefined ? data.notasInternas.trim() : pacienteActual.notasInternas,
+    };
+
+    setPatients(prev => prev.map(p => (p.id === id ? actualizado : p)));
+
+    // Sincronizar datos visibles en citas de este paciente
+    const cov = coverages.find(c => c.id === actualizado.coverageId);
+    setAppointments(prev =>
+      prev.map(app => {
+        if (app.patientId === id) {
+          return {
+            ...app,
+            pacienteNombre: actualizado.nombre,
+            pacienteDni: actualizado.dni,
+            pacienteTelefono: actualizado.telefonoE164,
+            pacienteEmail: actualizado.email,
+            pacienteCobertura: cov ? cov.nombre : app.pacienteCobertura,
+            pacientePlan: actualizado.plan,
+            pacienteAfiliado: actualizado.nroAfiliado,
+          };
+        }
+        return app;
+      })
+    );
+
+    return { success: true, patient: actualizado };
   };
 
   const bookAppointment = (params: {
@@ -574,6 +714,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     URL.revokeObjectURL(url);
   };
 
+  const addCoverage = (nombre: string): Coverage => {
+    const trimmed = nombre.trim();
+    const id = 'cov_' + Math.random().toString(36).slice(2, 9);
+    const nueva: Coverage = {
+      id,
+      nombre: trimmed,
+      tipo: 'obra_social',
+    };
+    setCoverages(prev => {
+      const actualizadas = [...prev, nueva];
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_coverages`, JSON.stringify(actualizadas));
+      } catch (e) {
+        console.error(e);
+      }
+      return actualizadas;
+    });
+    return nueva;
+  };
+
+  const updateCoverages = (nuevas: Coverage[]) => {
+    setCoverages(nuevas);
+  };
+
+  const toggleHolidayLaborable = (holidayId: string) => {
+    setHolidays(prev => {
+      const actualizados = prev.map(h =>
+        h.id === holidayId ? { ...h, laborable: !h.laborable } : h
+      );
+      try {
+        localStorage.setItem(`${STORAGE_KEY}_holidays`, JSON.stringify(actualizados));
+      } catch (e) {
+        console.error(e);
+      }
+      return actualizados;
+    });
+  };
+
+  const updateHolidays = (nuevos: Holiday[]) => {
+    setHolidays(nuevos);
+  };
+
   const resetToDemoData = () => {
     localStorage.removeItem(`${STORAGE_KEY}_prof`);
     localStorage.removeItem(`${STORAGE_KEY}_locs`);
@@ -581,6 +763,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(`${STORAGE_KEY}_hours`);
     localStorage.removeItem(`${STORAGE_KEY}_holidays`);
     localStorage.removeItem(`${STORAGE_KEY}_timeoffs`);
+    localStorage.removeItem(`${STORAGE_KEY}_coverages`);
     localStorage.removeItem(`${STORAGE_KEY}_patients`);
     localStorage.removeItem(`${STORAGE_KEY}_appointments`);
     localStorage.removeItem(`${STORAGE_KEY}_notes`);
@@ -592,6 +775,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setWorkingHours(INITIAL_WORKING_HOURS);
     setHolidays(INITIAL_HOLIDAYS);
     setTimeOffs([]);
+    setCoverages(INITIAL_COVERAGES);
     setPatients(INITIAL_PATIENTS);
     setAppointments(generarTurnosIniciales());
     setHolds([]);
@@ -630,7 +814,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateTemplates,
         toggleAgendaPausa,
         findPatientByDni,
+        addPatient,
+        updatePatient,
         exportarCsvTurnos,
+        addCoverage,
+        updateCoverages,
+        toggleHolidayLaborable,
+        updateHolidays,
         resetToDemoData,
       }}
     >

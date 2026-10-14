@@ -27,22 +27,55 @@ import {
   ShieldCheck,
   ChevronRight,
   X,
+  Edit2,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { ConsultationNote, NoteAttachment, Patient } from '../../../types';
-import { formatearFechaCorta, formatearFechaLarga, formatearHora } from '../../../modules/format';
+import {
+  formatearFechaCorta,
+  formatearFechaLarga,
+  formatearHora,
+  normalizarTelefonoArgentino,
+  validarDni,
+} from '../../../modules/format';
 
 interface PacientesTabProps {
   pacientePreseleccionadoId?: string | null;
 }
 
 export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccionadoId }) => {
-  const { patients, notes, professional, saveConsultationNote } = useApp();
+  const {
+    patients,
+    notes,
+    professional,
+    coverages,
+    saveConsultationNote,
+    addPatient,
+    updatePatient,
+    addCoverage,
+  } = useApp();
 
   const [busqueda, setBusqueda] = useState('');
   const [pacienteSeleccionadoId, setPacienteSeleccionadoId] = useState<string>(
     pacientePreseleccionadoId || patients[0]?.id || ''
   );
+
+  // Modal para agregar nueva obra social / prepaga
+  const [modalNuevaCobertura, setModalNuevaCobertura] = useState(false);
+  const [nombreNuevaCobertura, setNombreNuevaCobertura] = useState('');
+  const [errorNuevaCobertura, setErrorNuevaCobertura] = useState('');
+
+  const handleGuardarNuevaCobertura = () => {
+    if (!nombreNuevaCobertura.trim()) {
+      setErrorNuevaCobertura('Ingresá el nombre de la obra social o prepaga.');
+      return;
+    }
+    const creada = addCoverage(nombreNuevaCobertura.trim());
+    setModalPaciente(prev => (prev ? { ...prev, coberturaId: creada.id } : null));
+    setModalNuevaCobertura(false);
+    setNombreNuevaCobertura('');
+    setErrorNuevaCobertura('');
+  };
 
   // Editor de Notas Clínicas
   const [notaTexto, setNotaTexto] = useState('');
@@ -53,6 +86,111 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
 
   // Modal de lectura de nota histórica
   const [notaLectura, setNotaLectura] = useState<ConsultationNote | null>(null);
+
+  // Modal de Creación / Edición de Paciente
+  const [modalPaciente, setModalPaciente] = useState<{
+    abierto: boolean;
+    modo: 'nuevo' | 'editar';
+    pacienteId?: string;
+    dni: string;
+    nombre: string;
+    telefono: string;
+    email: string;
+    coberturaId: string;
+    plan: string;
+    nroAfiliado: string;
+    notasInternas: string;
+  } | null>(null);
+
+  const [erroresModal, setErroresModal] = useState<Record<string, string>>({});
+
+  const handleAbrirNuevoPaciente = () => {
+    setErroresModal({});
+    setModalPaciente({
+      abierto: true,
+      modo: 'nuevo',
+      dni: '',
+      nombre: '',
+      telefono: '',
+      email: '',
+      coberturaId: coverages[0]?.id || '',
+      plan: '',
+      nroAfiliado: '',
+      notasInternas: '',
+    });
+  };
+
+  const handleAbrirEditarPaciente = (p: Patient) => {
+    setErroresModal({});
+    setModalPaciente({
+      abierto: true,
+      modo: 'editar',
+      pacienteId: p.id,
+      dni: p.dni,
+      nombre: p.nombre,
+      telefono: p.telefonoE164,
+      email: p.email || '',
+      coberturaId: p.coverageId || coverages[0]?.id || '',
+      plan: p.plan || '',
+      nroAfiliado: p.nroAfiliado || '',
+      notasInternas: p.notasInternas || '',
+    });
+  };
+
+  const handleGuardarModalPaciente = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalPaciente) return;
+
+    const errs: Record<string, string> = {};
+    if (!modalPaciente.nombre.trim()) errs.nombre = 'Ingresá el nombre y apellido completo.';
+    const vDni = validarDni(modalPaciente.dni);
+    if (!vDni.valido) errs.dni = 'DNI inválido (debe contener 7 u 8 números, sin puntos).';
+    const normTel = normalizarTelefonoArgentino(modalPaciente.telefono);
+    if (!normTel.valido) errs.telefono = 'Teléfono celular argentino inválido (ej. 11 4521-8844).';
+
+    if (Object.keys(errs).length > 0) {
+      setErroresModal(errs);
+      return;
+    }
+
+    if (modalPaciente.modo === 'nuevo') {
+      const res = addPatient({
+        dni: vDni.dni,
+        nombre: modalPaciente.nombre,
+        telefonoE164: normTel.e164,
+        email: modalPaciente.email,
+        coverageId: modalPaciente.coberturaId,
+        plan: modalPaciente.plan,
+        nroAfiliado: modalPaciente.nroAfiliado,
+        notasInternas: modalPaciente.notasInternas,
+      });
+
+      if (res.success && res.patient) {
+        setPacienteSeleccionadoId(res.patient.id);
+        setModalPaciente(null);
+      } else {
+        alert(res.error || 'No se pudo crear el paciente.');
+      }
+    } else {
+      if (!modalPaciente.pacienteId) return;
+      const res = updatePatient(modalPaciente.pacienteId, {
+        dni: vDni.dni,
+        nombre: modalPaciente.nombre,
+        telefonoE164: normTel.e164,
+        email: modalPaciente.email,
+        coverageId: modalPaciente.coberturaId,
+        plan: modalPaciente.plan,
+        nroAfiliado: modalPaciente.nroAfiliado,
+        notasInternas: modalPaciente.notasInternas,
+      });
+
+      if (res.success) {
+        setModalPaciente(null);
+      } else {
+        alert(res.error || 'No se pudieron actualizar los datos del paciente.');
+      }
+    }
+  };
 
   // Si cambia la preselección desde otra pestaña
   useEffect(() => {
@@ -169,9 +307,20 @@ Próximo control: `;
               <User className="w-4 h-4 text-sky-600" />
               <span>Directorio de Pacientes</span>
             </h3>
-            <span className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-full">
-              {patients.length} fichas
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded-full">
+                {patients.length} fichas
+              </span>
+              <button
+                type="button"
+                onClick={handleAbrirNuevoPaciente}
+                className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                title="Cargar nuevo paciente"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Nuevo</span>
+              </button>
+            </div>
           </div>
 
           <div className="relative">
@@ -248,12 +397,23 @@ Próximo control: `;
                   </div>
                 </div>
 
-                <div className="text-right sm:self-center">
-                  <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
-                    {pacienteSeleccionado.plan || 'Particular'}
-                  </span>
+                <div className="flex flex-col sm:items-end gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
+                      {pacienteSeleccionado.plan || 'Particular'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirEditarPaciente(pacienteSeleccionado)}
+                      className="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors"
+                      title="Editar datos del paciente"
+                    >
+                      <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Editar datos</span>
+                    </button>
+                  </div>
                   {pacienteSeleccionado.nroAfiliado && (
-                    <div className="text-[11px] text-slate-500 mt-1">
+                    <div className="text-[11px] text-slate-500">
                       Afiliado: {pacienteSeleccionado.nroAfiliado}
                     </div>
                   )}
@@ -529,6 +689,294 @@ Próximo control: `;
                 className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CARGAR / EDITAR PACIENTE */}
+      {modalPaciente && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            
+            {/* Cabecera del modal */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">
+                    {modalPaciente.modo === 'nuevo' ? 'Nuevo Paciente' : 'Editar Datos del Paciente'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {modalPaciente.modo === 'nuevo'
+                      ? 'Cargá los datos del paciente para su ficha y agenda'
+                      : `Actualizando ficha de ${modalPaciente.nombre || 'paciente'}`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalPaciente(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarModalPaciente} className="space-y-4 text-xs">
+              
+              {/* Bloque: Datos Personales */}
+              <div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      DNI (sin puntos) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={modalPaciente.dni}
+                      onChange={e => {
+                        setModalPaciente({ ...modalPaciente, dni: e.target.value });
+                        if (erroresModal.dni) setErroresModal(prev => ({ ...prev, dni: '' }));
+                      }}
+                      placeholder="Ej. 36842190"
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600 tabular-nums"
+                    />
+                    {erroresModal.dni && (
+                      <p className="text-[11px] text-red-600 mt-1">{erroresModal.dni}</p>
+                    )}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Nombre y Apellido completo *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={modalPaciente.nombre}
+                      onChange={e => {
+                        setModalPaciente({ ...modalPaciente, nombre: e.target.value });
+                        if (erroresModal.nombre) setErroresModal(prev => ({ ...prev, nombre: '' }));
+                      }}
+                      placeholder="Ej. Florencia Gómez"
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                    />
+                    {erroresModal.nombre && (
+                      <p className="text-[11px] text-red-600 mt-1">{erroresModal.nombre}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Teléfono / WhatsApp *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={modalPaciente.telefono}
+                      onChange={e => {
+                        setModalPaciente({ ...modalPaciente, telefono: e.target.value });
+                        if (erroresModal.telefono) setErroresModal(prev => ({ ...prev, telefono: '' }));
+                      }}
+                      placeholder="Ej. 11 4521-8844"
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                    />
+                    {erroresModal.telefono && (
+                      <p className="text-[11px] text-red-600 mt-1">{erroresModal.telefono}</p>
+                    )}
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Email de contacto (opcional)
+                    </label>
+                    <input
+                      type="email"
+                      value={modalPaciente.email}
+                      onChange={e => setModalPaciente({ ...modalPaciente, email: e.target.value })}
+                      placeholder="ejemplo@correo.com"
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bloque: Cobertura */}
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-sky-600" />
+                  <span>Cobertura Médica</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-slate-700">
+                        Obra Social / Prepaga
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNombreNuevaCobertura('');
+                          setErrorNuevaCobertura('');
+                          setModalNuevaCobertura(true);
+                        }}
+                        className="text-[11px] font-semibold text-sky-700 hover:text-sky-800 hover:underline flex items-center gap-0.5 cursor-pointer"
+                        title="Agregar nueva obra social o prepaga"
+                      >
+                        <Plus className="w-3 h-3" /> Agregar
+                      </button>
+                    </div>
+                    <select
+                      value={modalPaciente.coberturaId}
+                      onChange={e => {
+                        if (e.target.value === '__AGREGAR__') {
+                          setNombreNuevaCobertura('');
+                          setErrorNuevaCobertura('');
+                          setModalNuevaCobertura(true);
+                          return;
+                        }
+                        setModalPaciente({ ...modalPaciente, coberturaId: e.target.value });
+                      }}
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600 bg-white font-medium"
+                    >
+                      {coverages.map(cov => (
+                        <option key={cov.id} value={cov.id}>
+                          {cov.nombre}
+                        </option>
+                      ))}
+                      <option value="__AGREGAR__" className="text-sky-700 font-bold bg-sky-50">
+                        ➕ Agregar obra social / prepaga...
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Plan</label>
+                    <input
+                      type="text"
+                      value={modalPaciente.plan}
+                      onChange={e => setModalPaciente({ ...modalPaciente, plan: e.target.value })}
+                      placeholder="Ej. 310 / Plata"
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Nº de Afiliado</label>
+                    <input
+                      type="text"
+                      value={modalPaciente.nroAfiliado}
+                      onChange={e => setModalPaciente({ ...modalPaciente, nroAfiliado: e.target.value })}
+                      placeholder="Ej. 14890234/01"
+                      className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Observaciones clínicas / Notas internas */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Observaciones internas del paciente (antecedentes, patologías crónicas, alergias...)
+                </label>
+                <textarea
+                  rows={3}
+                  value={modalPaciente.notasInternas}
+                  onChange={e => setModalPaciente({ ...modalPaciente, notasInternas: e.target.value })}
+                  placeholder="Ej. Antecedente quirúrgico rodilla derecha, derivado por Dr. López..."
+                  className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                />
+              </div>
+
+              {/* Botones de acción */}
+              <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setModalPaciente(null)}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 shadow-xs transition-colors"
+                >
+                  {modalPaciente.modo === 'nuevo' ? 'Crear Paciente' : 'Guardar Cambios'}
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* Modal secundario para Agregar Nueva Obra Social / Prepaga */}
+      {modalNuevaCobertura && (
+        <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-sky-600" />
+                <span>Agregar Obra Social / Prepaga</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setModalNuevaCobertura(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nombre de la Obra Social / Prepaga *
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={nombreNuevaCobertura}
+                  onChange={e => {
+                    setNombreNuevaCobertura(e.target.value);
+                    if (errorNuevaCobertura) setErrorNuevaCobertura('');
+                  }}
+                  placeholder="Ej. Medifé, Galeno, IOMA, PAMI, etc."
+                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleGuardarNuevaCobertura();
+                    }
+                  }}
+                />
+                {errorNuevaCobertura && (
+                  <p className="text-[11px] text-red-600 mt-1">{errorNuevaCobertura}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setModalNuevaCobertura(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGuardarNuevaCobertura}
+                className="px-4 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-700 shadow-xs transition-colors cursor-pointer"
+              >
+                Guardar y Seleccionar
               </button>
             </div>
           </div>
