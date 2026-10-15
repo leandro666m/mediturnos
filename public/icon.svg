@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#0369a1" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    <linearGradient id="crossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#ffffff" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#082f49" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Inner subtle border -->
+  <rect x="8" y="8" width="496" height="496" rx="104" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="4" />
+
+  <!-- Medical Cross & Stethoscope Icon in Safe Zone -->
+  <g filter="url(#shadow)">
+    <!-- Central Medical Cross -->
+    <rect x="232" y="140" width="48" height="150" rx="14" fill="#ffffff" />
+    <rect x="181" y="191" width="150" height="48" rx="14" fill="#ffffff" />
+
+    <!-- Stethoscope Arch & Bell -->
+    <path d="M168 250 C168 335, 344 335, 344 250" fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" />
+    <path d="M256 312 L256 376" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" />
+    <circle cx="256" cy="396" r="26" fill="#38bdf8" stroke="#ffffff" stroke-width="10" />
+
+    <!-- Ear tips -->
+    <circle cx="168" cy="235" r="14" fill="#ffffff" />
+    <circle cx="344" cy="235" r="14" fill="#ffffff" />
+  </g>
+</svg>

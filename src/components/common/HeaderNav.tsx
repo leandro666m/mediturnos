@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export const HeaderNav: React.FC = () => {
   const { professional, activeZone, setActiveZone, resetToDemoData } = useApp();
@@ -60,12 +61,14 @@ export const HeaderNav: React.FC = () => {
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
-              <span>Portal Paciente (PWA)</span>
+              <span>Portal Paciente</span>
             </button>
           </div>
 
-          {/* Doctor Activo & Reset Demo */}
-          <div className="flex items-center gap-3">
+          {/* Doctor Activo, PWA Install & Reset Demo */}
+          <div className="flex items-center gap-2.5">
+            <PWAInstallButton variant="outline" label="Instalar App" className="hidden sm:flex" />
+
             <div className="hidden lg:flex flex-col text-right">
               <span className="text-xs font-bold text-slate-900">
                 {professional.titulo} {professional.nombre}

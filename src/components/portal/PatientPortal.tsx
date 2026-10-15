@@ -17,8 +17,13 @@ import {
   Smartphone,
   Info,
   Check,
+  Download,
+  X,
+  Share,
+  PlusSquare,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePWAInstall } from '../../modules/usePWAInstall';
 import { calculateAvailability } from '../../modules/availability';
 import {
   formatearFechaLarga,
@@ -84,6 +89,11 @@ export const PatientPortal: React.FC = () => {
 
   // Vista en marco de celular vs full width
   const [modoMarcoMovil, setModoMarcoMovil] = useState(false);
+
+  // Soporte PWA para el paciente
+  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
+  const [mostrarAlertaInstalar, setMostrarAlertaInstalar] = useState(false);
+  const [mostrarGuiaPWA, setMostrarGuiaPWA] = useState(false);
 
   // Seleccionar primer servicio por defecto si no hay
   useEffect(() => {
@@ -261,19 +271,31 @@ export const PatientPortal: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 py-6 px-3 sm:px-6 flex flex-col items-center">
       
-      {/* Botón flotante para alternar vista móvil */}
+      {/* Botón flotante para alternar vista móvil y botón PWA */}
       <div className="w-full max-w-2xl mb-4 flex justify-between items-center text-xs text-slate-500">
         <div className="flex items-center gap-1.5 font-medium">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           <span>Portal del Paciente en vivo (PWA)</span>
         </div>
-        <button
-          onClick={() => setModoMarcoMovil(!modoMarcoMovil)}
-          className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-medium shadow-2xs"
-        >
-          <Smartphone className="w-3.5 h-3.5" />
-          <span>{modoMarcoMovil ? 'Ver pantalla completa' : 'Simular vista smartphone'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {!isInstalled && (
+            <button
+              type="button"
+              onClick={() => setMostrarAlertaInstalar(true)}
+              className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-medium shadow-2xs transition-colors cursor-pointer"
+              title="Instalar App en tu dispositivo"
+            >
+              <Download className="w-4 h-4 text-sky-600" />
+            </button>
+          )}
+          <button
+            onClick={() => setModoMarcoMovil(!modoMarcoMovil)}
+            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-medium shadow-2xs cursor-pointer"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>{modoMarcoMovil ? 'Ver pantalla completa' : 'Simular vista smartphone'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Contenedor Principal (simulador de móvil o contenedor responsivo) */}
@@ -301,8 +323,33 @@ export const PatientPortal: React.FC = () => {
                 <span>M.P. {professional.matriculaProvincial}</span>
               </div>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shrink-0">
-              <User className="w-6 h-6" />
+
+            <div className="flex items-center gap-2.5 shrink-0">
+              {/* Botón de instalar app - SOLO con el ícono (con confirmación al tocar) */}
+              {!isInstalled && (
+                <button
+                  type="button"
+                  onClick={() => setMostrarAlertaInstalar(true)}
+                  className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-xs"
+                  title="Instalar App"
+                  aria-label="Instalar App"
+                >
+                  <Download className="w-5 h-5 text-sky-200 hover:text-white" />
+                </button>
+              )}
+
+              {/* Foto de perfil del profesional */}
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shrink-0 overflow-hidden shadow-sm">
+                {professional.fotoPerfil ? (
+                  <img
+                    src={professional.fotoPerfil}
+                    alt={professional.nombre}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="w-6 h-6 text-sky-200" />
+                )}
+              </div>
             </div>
           </div>
 
@@ -1069,6 +1116,105 @@ export const PatientPortal: React.FC = () => {
         )}
 
       </div>
+
+      {/* ALERTA DE CONFIRMACIÓN PARA INSTALAR LA APP (Regla: sólo ícono, alerta al tocar) */}
+      {mostrarAlertaInstalar && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
+              <Download className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 text-center">
+              ¿Deseas instalar la App?
+            </h3>
+            <p className="text-xs text-slate-500 text-center mt-2 leading-relaxed">
+              Instalá MediTurnos en tu dispositivo para acceder rápidamente a tus turnos, recordatorios e información de contacto sin necesidad de abrir el navegador web.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setMostrarAlertaInstalar(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setMostrarAlertaInstalar(false);
+                  if (isInstallable) {
+                    const ok = await install();
+                    if (!ok) setMostrarGuiaPWA(true);
+                  } else {
+                    setMostrarGuiaPWA(true);
+                  }
+                }}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Sí, instalar</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GUÍA MANUAL PARA INSTALAR PWA */}
+      {mostrarGuiaPWA && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Cómo instalar MediTurnos</h3>
+                  <p className="text-[11px] text-slate-500">Agregá la aplicación a tu pantalla</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMostrarGuiaPWA(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isIOS ? (
+              <div className="space-y-3 text-xs text-slate-600">
+                <p>En tu iPhone o iPad (Safari):</p>
+                <ol className="list-decimal list-inside space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <li>Tocá el botón <strong>Compartir</strong> (ícono <Share className="w-3.5 h-3.5 inline text-sky-600" /> en la barra inferior de Safari).</li>
+                  <li>Deslizá hacia abajo y seleccioná <strong>"Agregar a pantalla de inicio"</strong> (<PlusSquare className="w-3.5 h-3.5 inline text-sky-600" />).</li>
+                  <li>Tocá <strong>"Agregar"</strong> arriba a la derecha.</li>
+                </ol>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs text-slate-600">
+                <p>En Android, Windows o macOS:</p>
+                <ol className="list-decimal list-inside space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <li>Tocá el menú del navegador (tres puntos <strong>⋮</strong> arriba o abajo a la derecha).</li>
+                  <li>Elegí <strong>"Instalar aplicación"</strong> o <strong>"Agregar a la pantalla principal"</strong>.</li>
+                  <li>Confirmá la instalación para crear el acceso directo en tu dispositivo.</li>
+                </ol>
+              </div>
+            )}
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setMostrarGuiaPWA(false)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

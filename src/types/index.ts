@@ -68,6 +68,7 @@ export interface Professional {
   zonaHoraria: string;
   agendaPausada: boolean;
   telefonoContactoPrivado: string; // Solo interno, NUNCA visible al paciente (D-17)
+  fotoPerfil?: string; // URL o base64 de la foto de perfil del profesional
   parametros: {
     grillaMin: number;
     anticipacionMinHoras: number;

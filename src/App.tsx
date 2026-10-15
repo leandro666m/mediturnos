@@ -8,6 +8,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { HeaderNav } from './components/common/HeaderNav';
 import { DoctorDashboard } from './components/dashboard/DoctorDashboard';
 import { PatientPortal } from './components/portal/PatientPortal';
+import { OfflineIndicator } from './components/common/OfflineIndicator';
 
 function MediTurnosApp() {
   const { activeZone, setActiveZone, professional } = useApp();
@@ -28,6 +29,7 @@ function MediTurnosApp() {
       <div className="flex-1">
         {activeZone === 'dashboard' ? <DoctorDashboard /> : <PatientPortal />}
       </div>
+      <OfflineIndicator />
     </div>
   );
 }

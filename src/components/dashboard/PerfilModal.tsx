@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { User, MapPin, CreditCard, Shield, X, Plus, Trash2, Check } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { User, MapPin, CreditCard, Shield, X, Plus, Trash2, Check, Camera, UploadCloud, Image as ImageIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Location } from '../../types';
 
@@ -19,8 +19,40 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
   const [alias, setAlias] = useState(professional.aliasCobro);
   const [titular, setTitular] = useState(professional.titularCobro);
   const [slug, setSlug] = useState(professional.slug);
+  const [fotoPerfil, setFotoPerfil] = useState<string>(professional.fotoPerfil || '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
+
+  const handleSubirFoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      alert('La imagen no debe superar los 3 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (typeof event.target?.result === 'string') {
+        setFotoPerfil(event.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleQuitarFoto = () => {
+    setFotoPerfil('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +65,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
       aliasCobro: alias,
       titularCobro: titular,
       slug: slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-'),
+      fotoPerfil: fotoPerfil || undefined,
     });
     alert('Perfil profesional actualizado.');
     onClose();
@@ -55,13 +88,80 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          
+          {/* FOTO DE PERFIL DEL PROFESIONAL */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+            <label className="block font-bold text-slate-800 mb-2">Foto de Perfil Profesional</label>
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              {/* Vista previa del avatar */}
+              <div className="relative group shrink-0">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-200 border-2 border-white shadow-md flex items-center justify-center text-slate-500">
+                  {fotoPerfil ? (
+                    <img
+                      src={fotoPerfil}
+                      alt="Foto de perfil"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-tr from-sky-600 to-teal-500 text-white flex items-center justify-center text-2xl font-bold">
+                      {nombre.charAt(0) || 'D'}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1.5 -right-1.5 p-1.5 bg-sky-600 text-white rounded-xl shadow-md hover:bg-sky-700 transition-colors cursor-pointer"
+                  title="Cambiar foto"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Botones y explicaciones */}
+              <div className="flex-1 text-center sm:text-left">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleSubirFoto}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-1.5">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5 text-sky-600" />
+                    <span>{fotoPerfil ? 'Reemplazar foto' : 'Subir foto'}</span>
+                  </button>
+
+                  {fotoPerfil && (
+                    <button
+                      type="button"
+                      onClick={handleQuitarFoto}
+                      className="px-2.5 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-xl font-semibold flex items-center gap-1 cursor-pointer"
+                      title="Eliminar foto de perfil"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Quitar</span>
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Esta foto se mostrará a tus pacientes en el <strong>Portal Paciente</strong> y en la cabecera de tu agenda. Formato JPG, PNG o WebP (máx. 3 MB).
+                </p>
+              </div>
+            </div>
+          </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>

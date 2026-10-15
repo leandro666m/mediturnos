@@ -19,6 +19,7 @@ import { PacientesTab } from './tabs/PacientesTab';
 import { HorariosTab } from './tabs/HorariosTab';
 import { DifusionTab } from './tabs/DifusionTab';
 import { PerfilModal } from './PerfilModal';
+import { PWAInstallButton } from '../common/PWAInstallButton';
 
 export const DoctorDashboard: React.FC = () => {
   const { professional, locations, appointments, exportarCsvTurnos, setActiveZone } = useApp();
@@ -42,8 +43,16 @@ export const DoctorDashboard: React.FC = () => {
             
             {/* Identificación del profesional */}
             <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-700 to-sky-500 text-white flex items-center justify-center font-bold text-lg shadow-sm shadow-sky-600/20 shrink-0">
-                {professional.nombre.charAt(0)}
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-700 to-sky-500 text-white flex items-center justify-center font-bold text-lg shadow-sm shadow-sky-600/20 shrink-0 overflow-hidden">
+                {professional.fotoPerfil ? (
+                  <img
+                    src={professional.fotoPerfil}
+                    alt={professional.nombre}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  professional.nombre.charAt(0)
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -52,7 +61,7 @@ export const DoctorDashboard: React.FC = () => {
                   </h1>
                   <button
                     onClick={() => setModalPerfilAbierto(true)}
-                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                     title="Editar Perfil"
                   >
                     <Settings className="w-4 h-4" />
@@ -80,6 +89,9 @@ export const DoctorDashboard: React.FC = () => {
 
             {/* Acciones Rápidas del Header */}
             <div className="flex flex-wrap items-center gap-2.5">
+              {/* Instalar App PWA */}
+              <PWAInstallButton variant="outline" label="Instalar App" />
+
               {/* Ver portal como paciente */}
               <button
                 onClick={() => setActiveZone('portal')}

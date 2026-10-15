@@ -91,6 +91,7 @@ export const INITIAL_PROFESSIONAL: Professional = {
   zonaHoraria: 'America/Argentina/Buenos_Aires',
   agendaPausada: false,
   telefonoContactoPrivado: '+5491148899221', // Privado, no visible en portal
+  fotoPerfil: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&auto=format&fit=crop&q=80',
   parametros: {
     grillaMin: 30,
     anticipacionMinHoras: 2,
