@@ -85,6 +85,7 @@ interface AppContextType {
     nuevoFin: string
   ) => { success: boolean; newAppointment?: Appointment; error?: string };
   saveConsultationNote: (note: Partial<ConsultationNote> & { patientId: string }) => ConsultationNote;
+  deleteConsultationNote: (noteId: string) => void;
   updateProfessional: (data: Partial<Professional>) => void;
   updateWorkingHours: (hours: WorkingHours[]) => void;
   updateServices: (services: Service[]) => void;
@@ -602,40 +603,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const saveConsultationNote = (noteData: Partial<ConsultationNote> & { patientId: string }): ConsultationNote => {
-    const existingIndex = notes.findIndex(
-      n => (noteData.id && n.id === noteData.id) || (noteData.appointmentId && n.appointmentId === noteData.appointmentId)
-    );
+    let savedNote: ConsultationNote;
+    const targetId = noteData.id;
 
-    if (existingIndex >= 0) {
-      const updated: ConsultationNote = {
-        ...notes[existingIndex],
-        ...noteData,
-        version: notes[existingIndex].version + 1,
-        actualizadoEn: new Date().toISOString(),
-      };
-      setNotes(prev => {
+    setNotes(prev => {
+      const existingIndex = prev.findIndex(
+        n => (targetId && n.id === targetId) || (noteData.appointmentId && n.appointmentId === noteData.appointmentId)
+      );
+
+      if (existingIndex >= 0) {
+        savedNote = {
+          ...prev[existingIndex],
+          ...noteData,
+          version: (prev[existingIndex].version || 1) + 1,
+          actualizadoEn: new Date().toISOString(),
+        };
         const copy = [...prev];
-        copy[existingIndex] = updated;
+        copy[existingIndex] = savedNote;
         return copy;
-      });
-      return updated;
-    } else {
-      const nuevaNota: ConsultationNote = {
-        id: 'note_' + Math.random().toString(36).slice(2, 10),
-        professionalId: professional.id,
-        patientId: noteData.patientId,
-        appointmentId: noteData.appointmentId,
-        atendidoEn: noteData.atendidoEn || new Date().toISOString(),
-        especialidad: noteData.especialidad || professional.especialidad,
-        contenidoJson: noteData.contenidoJson || '{}',
-        textoPlano: noteData.textoPlano || '',
-        version: 1,
-        adjuntos: noteData.adjuntos || [],
-        actualizadoEn: new Date().toISOString(),
-      };
-      setNotes(prev => [nuevaNota, ...prev]);
-      return nuevaNota;
-    }
+      } else {
+        savedNote = {
+          id: targetId || ('note_' + Math.random().toString(36).slice(2, 10)),
+          professionalId: professional.id,
+          patientId: noteData.patientId,
+          appointmentId: noteData.appointmentId,
+          atendidoEn: noteData.atendidoEn || new Date().toISOString(),
+          especialidad: noteData.especialidad || professional.especialidad,
+          contenidoJson: noteData.contenidoJson || '{}',
+          textoPlano: noteData.textoPlano || '',
+          version: 1,
+          adjuntos: noteData.adjuntos || [],
+          actualizadoEn: new Date().toISOString(),
+        };
+        return [savedNote, ...prev];
+      }
+    });
+
+    return savedNote!;
+  };
+
+  const deleteConsultationNote = (noteId: string) => {
+    setNotes(prev => prev.filter(n => n.id !== noteId));
   };
 
   const updateProfessional = (data: Partial<Professional>) => {
@@ -808,6 +816,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAppointmentPayment,
         rescheduleAppointment,
         saveConsultationNote,
+        deleteConsultationNote,
         updateProfessional,
         updateWorkingHours,
         updateServices,
