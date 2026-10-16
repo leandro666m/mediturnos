@@ -15,6 +15,7 @@ import {
   Edit2,
   AlertCircle,
   Building2,
+  ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { FontSizePreference, Location } from '../../types';
@@ -45,8 +46,11 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
   const [locNombre, setLocNombre] = useState('');
   const [locDireccion, setLocDireccion] = useState('');
   const [locIndicaciones, setLocIndicaciones] = useState('');
+  const [locMapsUrl, setLocMapsUrl] = useState('');
   const [locActiva, setLocActiva] = useState(true);
   const [locError, setLocError] = useState('');
+  const [locAEliminarId, setLocAEliminarId] = useState<string | null>(null);
+  const [locFeedback, setLocFeedback] = useState<string | null>(null);
 
   // Sincronizar lista si locations cambia externamente
   useEffect(() => {
@@ -60,12 +64,12 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
+      setLocError('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
       return;
     }
 
     if (file.size > 3 * 1024 * 1024) {
-      alert('La imagen no debe superar los 3 MB.');
+      setLocError('La imagen no debe superar los 3 MB.');
       return;
     }
 
@@ -97,8 +101,10 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
     setLocNombre('');
     setLocDireccion('');
     setLocIndicaciones('');
+    setLocMapsUrl('');
     setLocActiva(true);
     setLocError('');
+    setLocAEliminarId(null);
   };
 
   const handleAbrirEdicionLoc = (loc: Location) => {
@@ -106,8 +112,10 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
     setLocNombre(loc.nombre);
     setLocDireccion(loc.direccion);
     setLocIndicaciones(loc.indicaciones || '');
+    setLocMapsUrl(loc.mapsUrl || '');
     setLocActiva(loc.activa);
     setLocError('');
+    setLocAEliminarId(null);
   };
 
   const handleCerrarFormLoc = () => {
@@ -115,6 +123,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
     setLocNombre('');
     setLocDireccion('');
     setLocIndicaciones('');
+    setLocMapsUrl('');
     setLocError('');
   };
 
@@ -128,17 +137,22 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
       return;
     }
 
+    const mapsUrlLimpio = locMapsUrl.trim() || undefined;
+
     if (modoEdicionLocId === 'nueva') {
       const nueva: Location = {
         id: `loc-${Date.now()}`,
         nombre: locNombre.trim(),
         direccion: locDireccion.trim(),
         indicaciones: locIndicaciones.trim() || undefined,
+        mapsUrl: mapsUrlLimpio,
         activa: locActiva,
       };
       const actualizadas = [...listaLocations, nueva];
       setListaLocations(actualizadas);
       updateLocations(actualizadas);
+      setLocFeedback(`Dirección "${nueva.nombre}" agregada.`);
+      setTimeout(() => setLocFeedback(null), 3000);
     } else {
       const actualizadas = listaLocations.map(l =>
         l.id === modoEdicionLocId
@@ -147,25 +161,31 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
               nombre: locNombre.trim(),
               direccion: locDireccion.trim(),
               indicaciones: locIndicaciones.trim() || undefined,
+              mapsUrl: mapsUrlLimpio,
               activa: locActiva,
             }
           : l
       );
       setListaLocations(actualizadas);
       updateLocations(actualizadas);
+      setLocFeedback(`Dirección "${locNombre.trim()}" actualizada.`);
+      setTimeout(() => setLocFeedback(null), 3000);
     }
 
     handleCerrarFormLoc();
   };
 
-  const handleEliminarLoc = (id: string, nombreLoc: string) => {
-    if (!confirm(`¿Eliminar la ubicación "${nombreLoc}"?`)) return;
+  const handleEliminarLoc = (id: string) => {
+    const locEliminada = listaLocations.find(l => l.id === id);
     const actualizadas = listaLocations.filter(l => l.id !== id);
     setListaLocations(actualizadas);
     updateLocations(actualizadas);
     if (modoEdicionLocId === id) {
       handleCerrarFormLoc();
     }
+    setLocAEliminarId(null);
+    setLocFeedback(`Dirección ${locEliminada ? `"${locEliminada.nombre}" ` : ''}eliminada.`);
+    setTimeout(() => setLocFeedback(null), 3000);
   };
 
   const handleToggleActivaLoc = (id: string) => {
@@ -198,7 +218,6 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
       tamanoTexto,
     });
     updateLocations(listaLocations);
-    alert('Perfil profesional y direcciones actualizadas con éxito.');
     onClose();
   };
 
@@ -372,6 +391,13 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
               Administrá los consultorios o sedes físicas donde atendés. Se mostrarán en la cabecera de tu agenda, en el Portal Paciente y en los mensajes con las indicaciones para llegar.
             </p>
 
+            {locFeedback && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-[11px] font-semibold flex items-center gap-2 mb-3">
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>{locFeedback}</span>
+              </div>
+            )}
+
             {/* Formulario de Alta / Modificación */}
             {modoEdicionLocId !== null && (
               <div className="p-3.5 bg-sky-50/70 border border-sky-200 rounded-2xl mb-3 space-y-3 transition-all">
@@ -448,6 +474,38 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                   />
                 </div>
 
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold text-slate-700 text-[11px]">
+                      Link de Google Maps (opcional)
+                    </label>
+                    {locMapsUrl.trim() && (
+                      <a
+                        href={locMapsUrl.trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Probar enlace</span>
+                      </a>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      value={locMapsUrl}
+                      onChange={e => setLocMapsUrl(e.target.value)}
+                      placeholder="ej. https://maps.app.goo.gl/... o https://goo.gl/maps/..."
+                      className="w-full p-2 pl-8 bg-white border border-slate-200 rounded-lg outline-none focus:border-sky-600 text-xs font-mono"
+                    />
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Pegá el enlace directo para que tus pacientes puedan abrir la ubicación en Google Maps desde el portal y desde el WhatsApp de confirmación.
+                  </p>
+                </div>
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-sky-100">
                   <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] font-semibold text-slate-700">
                     <input
@@ -460,6 +518,17 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                   </label>
 
                   <div className="flex items-center gap-2 justify-end">
+                    {modoEdicionLocId !== 'nueva' && (
+                      <button
+                        type="button"
+                        onClick={() => handleEliminarLoc(modoEdicionLocId)}
+                        className="px-2.5 py-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer mr-auto"
+                        title="Eliminar esta dirección"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Eliminar dirección</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleCerrarFormLoc}
@@ -531,6 +600,20 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                             Indicaciones: {loc.indicaciones}
                           </div>
                         )}
+
+                        {loc.mapsUrl && (
+                          <div className="mt-1 pl-5">
+                            <a
+                              href={loc.mapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Ver en Google Maps</span>
+                            </a>
+                          </div>
+                        )}
                       </div>
 
                       {/* Botones de acción del ABM */}
@@ -558,14 +641,35 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                           <span>Editar</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleEliminarLoc(loc.id, loc.nombre)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="Eliminar dirección"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {locAEliminarId === loc.id ? (
+                          <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-lg">
+                            <span className="text-[10px] font-bold text-rose-700">¿Eliminar?</span>
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarLoc(loc.id)}
+                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold cursor-pointer"
+                            >
+                              Sí
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLocAEliminarId(null)}
+                              className="px-1.5 py-0.5 text-slate-500 hover:text-slate-700 rounded text-[10px] font-medium cursor-pointer"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setLocAEliminarId(loc.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar dirección"
+                            aria-label="Eliminar dirección"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -618,7 +722,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
 
           {/* SELECTOR DE TAMAÑO DE TEXTO (Regla del usuario: mínimo = actual, predeterminado = un poco más grande, grande = ampliado) */}
           <div className="pt-3 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
                 <Type className="w-4 h-4 text-sky-600" />
                 <h4 className="font-bold text-slate-900">Tamaño del Texto</h4>
@@ -629,9 +733,6 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                 {tamanoTexto === 'grande' && 'Tamaño: Grande (Ampliado)'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mb-3">
-              Elegí el tamaño tipográfico de la interfaz. Podés probarlo en tiempo real en la muestra o en toda la pantalla:
-            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {/* Opción 1: Mínimo (Tamaño original compacto) */}
@@ -717,14 +818,6 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                   Tamaño ampliado. Alta legibilidad para tablet, móvil o visión relajada.
                 </div>
               </button>
-            </div>
-
-            {/* Muestra tipográfica en vivo */}
-            <div className="mt-2.5 p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-slate-600">
-              <span className="text-[11px] font-semibold text-slate-400">Previsualización en vivo:</span>
-              <span className="font-semibold text-slate-800 text-xs truncate">
-                {professional.titulo} {nombre} · Kinesiología y Fisiatría
-              </span>
             </div>
           </div>
 

@@ -21,6 +21,7 @@ import {
   X,
   Share,
   PlusSquare,
+  ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { usePWAInstall } from '../../modules/usePWAInstall';
@@ -260,7 +261,8 @@ export const PatientPortal: React.FC = () => {
       turnoConfirmado,
       professional,
       servicioSeleccionado || undefined,
-      dir?.direccion
+      dir?.direccion,
+      dir?.mapsUrl
     );
 
     return resolverPlantillaMensaje(
@@ -408,11 +410,27 @@ export const PatientPortal: React.FC = () => {
           </div>
 
           {/* Direcciones de atención */}
-          <div className="mt-4 pt-3 border-t border-sky-700/60 flex flex-col gap-1.5 text-xs text-sky-100">
+          <div className="mt-4 pt-3 border-t border-sky-700/60 flex flex-col gap-2 text-xs text-sky-100">
             {locations.filter(l => l.activa).map(loc => (
-              <div key={loc.id} className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-sky-300 shrink-0" />
-                <span className="truncate">{loc.direccion}</span>
+              <div key={loc.id} className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                  <span className="truncate">
+                    <strong className="text-white font-semibold">{loc.nombre}:</strong> {loc.direccion}
+                  </span>
+                </div>
+                {loc.mapsUrl && (
+                  <a
+                    href={loc.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 hover:text-white underline shrink-0 transition-colors"
+                    title={`Abrir ${loc.nombre} en Google Maps`}
+                  >
+                    <span>Ver en Google Maps</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
             ))}
           </div>
@@ -832,6 +850,26 @@ export const PatientPortal: React.FC = () => {
                                   </span>
                                 </div>
                               )}
+
+                              {/* Enlace a Google Maps para la ubicación seleccionada */}
+                              {(() => {
+                                const locSel =
+                                  locations.find(l => l.id === direccionElegidaId) || locations[0];
+                                if (!locSel?.mapsUrl) return null;
+                                return (
+                                  <div className="mt-2 pt-2 border-t border-sky-100 flex items-center">
+                                    <a
+                                      href={locSel.mapsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                      <span>Ver ubicación en Google Maps</span>
+                                    </a>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -912,14 +950,33 @@ export const PatientPortal: React.FC = () => {
                         {modalidadElegida === 'presencial' ? 'Presencial' : 'Videollamada por WhatsApp'}
                       </span>
                     </div>
-                    {modalidadElegida === 'presencial' && (
-                      <div className="flex justify-between items-start pt-0.5">
-                        <span className="text-slate-500 shrink-0">Consultorio:</span>
-                        <span className="font-semibold text-slate-800 text-right">
-                          {locations.find(l => l.id === direccionElegidaId)?.nombre || 'Consultorio'} · {locations.find(l => l.id === direccionElegidaId)?.direccion}
-                        </span>
-                      </div>
-                    )}
+                    {modalidadElegida === 'presencial' && (() => {
+                      const locActual =
+                        locations.find(l => l.id === direccionElegidaId) || locations[0];
+                      return (
+                        <div className="flex flex-col gap-1 pt-0.5">
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500 shrink-0">Consultorio:</span>
+                            <span className="font-semibold text-slate-800 text-right">
+                              {locActual ? `${locActual.nombre} · ${locActual.direccion}` : 'Consultorio'}
+                            </span>
+                          </div>
+                          {locActual?.mapsUrl && (
+                            <div className="flex justify-end">
+                              <a
+                                href={locActual.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Ver en Google Maps</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {servicioSeleccionado?.mostrarPrecio && (
                       <div className="flex justify-between pt-1 border-t border-slate-200">
                         <span className="text-slate-500">Valor consulta:</span>
@@ -1156,14 +1213,38 @@ export const PatientPortal: React.FC = () => {
                       </span>
                     </div>
 
-                    {turnoConfirmado.modalidad === 'presencial' && (
-                      <div className="flex justify-between pt-1">
-                        <span className="text-slate-500">Lugar:</span>
-                        <span className="font-semibold text-slate-800 text-right">
-                          {locations.find(l => l.id === turnoConfirmado.locationId)?.direccion || 'Consultorio'}
-                        </span>
-                      </div>
-                    )}
+                    {turnoConfirmado.modalidad === 'presencial' && (() => {
+                      const locActual =
+                        locations.find(l => l.id === turnoConfirmado.locationId) || locations[0];
+                      return (
+                        <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-100">
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500">Lugar:</span>
+                            <span className="font-semibold text-slate-800 text-right">
+                              {locActual ? `${locActual.nombre} · ${locActual.direccion}` : 'Consultorio'}
+                            </span>
+                          </div>
+                          {locActual?.indicaciones && (
+                            <div className="text-[11px] text-slate-500 text-right italic">
+                              Indicaciones: {locActual.indicaciones}
+                            </div>
+                          )}
+                          {locActual?.mapsUrl && (
+                            <div className="flex justify-end pt-1">
+                              <a
+                                href={locActual.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                <span>Abrir ubicación en Google Maps</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Acciones de WhatsApp y Calendario */}

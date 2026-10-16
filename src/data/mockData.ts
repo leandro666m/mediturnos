@@ -24,6 +24,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     direccion: 'Av. Cabildo 2450, Piso 4 Of. B, Belgrano, CABA',
     activa: true,
     indicaciones: 'Timbre 4B. A 100m de Estación Juramento Subte D.',
+    mapsUrl: 'https://maps.google.com/?q=Av.+Cabildo+2450,+Belgrano,+CABA',
   },
   {
     id: 'loc-olivos',
@@ -31,6 +32,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     direccion: 'Av. Maipú 1820, Consultorios Médicos Olivos, Vicente López, Bs. As.',
     activa: true,
     indicaciones: 'Estacionamiento sobre calle Corrientes.',
+    mapsUrl: 'https://maps.google.com/?q=Av.+Maipú+1820,+Vicente+López',
   },
 ];
 

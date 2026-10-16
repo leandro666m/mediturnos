@@ -10,6 +10,7 @@ export interface Location {
   direccion: string;
   activa: boolean;
   indicaciones?: string;
+  mapsUrl?: string; // Enlace a Google Maps para abrir la ubicación
 }
 
 export interface Service {

@@ -135,7 +135,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
     const srv = services.find(s => s.id === turno.serviceId);
     const dir = locations.find(l => l.id === turno.locationId);
 
-    const variables = prepararVariablesDesdeTurno(turno, professional, srv, dir?.direccion);
+    const variables = prepararVariablesDesdeTurno(turno, professional, srv, dir?.direccion, dir?.mapsUrl);
     const textoMensaje = resolverPlantillaMensaje(
       tpl?.cuerpo || '',
       tpl?.bloquePresencial || '',

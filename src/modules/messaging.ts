@@ -7,7 +7,7 @@ import {
 } from './format';
 
 export const BLOQUE_PRESENCIAL_DEFAULT =
-  '📍 Lugar: {direccion}\n📂 Si tenés estudios impresos o en PDF, llevalos a la consulta. ¡Te esperamos!';
+  '📍 Lugar: {direccion}\n🗺️ Google Maps: {link_maps}\n📂 Si tenés estudios impresos o en PDF, llevalos a la consulta. ¡Te esperamos!';
 
 export const BLOQUE_VIDEOLLAMADA_DEFAULT =
   '📞 Videollamada por WhatsApp: te vamos a llamar a este número a la hora de tu turno.\n📂 Si tenés estudios en PDF, tenelos a mano para reenviarlos en la consulta. ¡Nos vemos!';
@@ -47,6 +47,7 @@ export interface RenderVariables {
   valor: string;
   alias: string;
   direccion?: string;
+  link_maps?: string;
   link_gestionar?: string;
   modalidad: Modalidad;
 }
@@ -64,10 +65,22 @@ export function resolverPlantillaMensaje(
   const bloqueElegido =
     variables.modalidad === 'presencial' ? bloquePresencial : bloqueVideollamada;
 
-  // Reemplazar {direccion} dentro del bloque si aplica
-  const bloqueResuelto = bloqueElegido
-    .replace('{direccion}', variables.direccion || 'Consultorio')
+  // Si hay link_maps y el bloque no tiene la variable {link_maps}, añadirlo a la dirección
+  let direccionConMaps = variables.direccion || 'Consultorio';
+  if (variables.modalidad === 'presencial' && variables.link_maps && !bloqueElegido.includes('{link_maps}')) {
+    direccionConMaps = `${direccionConMaps}\n🗺️ Google Maps: ${variables.link_maps}`;
+  }
+
+  // Reemplazar {direccion} y {link_maps} dentro del bloque si aplica
+  let bloqueResuelto = bloqueElegido
+    .replace('{direccion}', direccionConMaps)
+    .replace('{link_maps}', variables.link_maps || '')
     .trim();
+
+  // Si no hay link_maps, limpiar líneas sueltas de Google Maps en el bloque
+  if (!variables.link_maps) {
+    bloqueResuelto = bloqueResuelto.replace(/🗺️ Google Maps:.*\n?/g, '');
+  }
 
   // 2. Reemplazar {bloque_modalidad} en el cuerpo principal
   let texto = cuerpo.replace('{bloque_modalidad}', bloqueResuelto);
@@ -87,6 +100,12 @@ export function resolverPlantillaMensaje(
   } else {
     // Eliminar líneas de dirección sueltas si no aplica
     texto = texto.replace(/📍 Lugar:.*\n?/g, '');
+  }
+
+  if (variables.link_maps) {
+    texto = texto.replace(/{link_maps}/g, variables.link_maps);
+  } else {
+    texto = texto.replace(/🗺️ Google Maps:.*\n?/g, '').replace(/{link_maps}/g, '');
   }
 
   if (variables.link_gestionar) {
@@ -156,7 +175,8 @@ export function prepararVariablesDesdeTurno(
   turno: Appointment,
   profesional: Professional,
   servicio?: Service,
-  direccionTexto?: string
+  direccionTexto?: string,
+  linkMaps?: string
 ): RenderVariables {
   return {
     paciente: turno.pacienteNombre,
@@ -167,6 +187,7 @@ export function prepararVariablesDesdeTurno(
     valor: formatearMoneda(turno.precioCentavos),
     alias: profesional.aliasCobro || 'alias.profesional.mp',
     direccion: direccionTexto || 'Consultorio',
+    link_maps: linkMaps,
     modalidad: turno.modalidad,
     link_gestionar: turno.manageToken ? `https://mediturnos.app/gestionar/${turno.manageToken}` : undefined,
   };

@@ -4,6 +4,7 @@ import {
   Calendar,
   Settings,
   Plus,
+  Minus,
   Trash2,
   Edit2,
   Check,
@@ -194,15 +195,16 @@ export const HorariosTab: React.FC = () => {
     updateWorkingHours([...workingHours, nueva]);
   };
 
-  const handleEliminarFranja = (franjaId: string, diaNum: number) => {
-    const franjasDia = workingHours.filter(wh => wh.diaSemana === diaNum);
-    if (franjasDia.length <= 1) {
-      if (confirm('Esta es la única franja horaria configurada para este día. ¿Deseas eliminarla y pausar la atención este día?')) {
-        updateWorkingHours(workingHours.filter(wh => wh.id !== franjaId));
-      }
-    } else {
-      updateWorkingHours(workingHours.filter(wh => wh.id !== franjaId));
-    }
+  // Mensaje de feedback temporal para guardados
+  const [guardadoMsg, setGuardadoMsg] = useState<string | null>(null);
+
+  const mostrarMensajeGuardado = (msg: string) => {
+    setGuardadoMsg(msg);
+    setTimeout(() => setGuardadoMsg(null), 3000);
+  };
+
+  const handleEliminarFranja = (franjaId: string, _diaNum: number) => {
+    updateWorkingHours(workingHours.filter(wh => wh.id !== franjaId));
   };
 
   const handleUpdateFranja = (id: string, campo: keyof WorkingHours, valor: any) => {
@@ -230,7 +232,7 @@ export const HorariosTab: React.FC = () => {
         quietHoursFin: quietFin,
       },
     });
-    alert('Parámetros globales guardados.');
+    mostrarMensajeGuardado('Parámetros globales guardados correctamente.');
   };
 
   const handleGuardarPlantillas = () => {
@@ -254,7 +256,7 @@ export const HorariosTab: React.FC = () => {
       return t;
     });
     updateTemplates(actualizadas);
-    alert('Plantillas de WhatsApp guardadas con éxito.');
+    mostrarMensajeGuardado('Plantillas de WhatsApp guardadas con éxito.');
   };
 
   // Previsualización de WhatsApp con datos de ejemplo
@@ -271,6 +273,7 @@ export const HorariosTab: React.FC = () => {
       valor: '$28.000',
       alias: professional.aliasCobro,
       direccion: locations[0]?.direccion,
+      link_maps: locations[0]?.mapsUrl,
       modalidad: 'presencial',
     }
   );
@@ -304,6 +307,7 @@ export const HorariosTab: React.FC = () => {
       valor: '$28.000',
       alias: professional.aliasCobro,
       direccion: locations[0]?.direccion,
+      link_maps: locations[0]?.mapsUrl,
       modalidad: 'presencial',
     }
   );
@@ -371,6 +375,13 @@ export const HorariosTab: React.FC = () => {
         </button>
       </div>
 
+      {guardadoMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 shadow-2xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{guardadoMsg}</span>
+        </div>
+      )}
+
       {/* =========================================================
           SUBPESTAÑA 1: DÍAS Y HORARIOS (Regla 1.9 A)
          ========================================================= */}
@@ -409,21 +420,21 @@ export const HorariosTab: React.FC = () => {
                           <span>{d.nombre}</span>
                         </label>
 
-                        {diaActivo ? (
+                        {!diaActivo ? (
+                          <span className="text-xs text-slate-400 font-medium italic">
+                            No atiende este día
+                          </span>
+                        ) : franjasDia.length === 0 ? (
                           <button
                             type="button"
-                            onClick={() => handleAgregarFranja(d.num, franjasDia[franjasDia.length - 1])}
+                            onClick={() => handleAgregarFranja(d.num)}
                             className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors cursor-pointer"
-                            title={`Agregar otra franja de horario para el día ${d.nombre}`}
+                            title={`Agregar franja de horario para el día ${d.nombre}`}
                           >
                             <Plus className="w-3.5 h-3.5" />
                             <span>Agregar horario</span>
                           </button>
-                        ) : (
-                          <span className="text-xs text-slate-400 font-medium italic">
-                            No atiende este día
-                          </span>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Filas de combo configs para este día */}
@@ -508,26 +519,26 @@ export const HorariosTab: React.FC = () => {
                                   </>
                                 )}
 
-                                {/* Botón '+' y '-' para cada combo config */}
-                                <div className="flex items-center gap-1 ml-auto shrink-0">
+                                {/* Botón '+' y '-' para cada combo config (limpio, sin etiquetas duplicadas ++ o - -) */}
+                                <div className="flex items-center gap-1.5 ml-auto shrink-0">
                                   <button
                                     type="button"
                                     onClick={() => handleAgregarFranja(d.num, franja)}
-                                    className="p-1.5 bg-white hover:bg-sky-50 text-slate-600 hover:text-sky-700 border border-slate-200 hover:border-sky-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                                    title="Agregar otra franja de horario para este día (+)"
-                                    aria-label="Agregar otra franja de horario"
+                                    className="w-7 h-7 flex items-center justify-center bg-white hover:bg-sky-50 text-sky-700 hover:text-sky-800 border border-slate-200 hover:border-sky-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                                    title="Agregar otro horario (+)"
+                                    aria-label="Agregar otro horario"
                                   >
-                                    <Plus className="w-3.5 h-3.5" />
+                                    <Plus className="w-4 h-4" />
                                   </button>
 
                                   <button
                                     type="button"
                                     onClick={() => handleEliminarFranja(franja.id, d.num)}
-                                    className="p-1.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                                    title="Quitar esta franja de horario (-)"
-                                    aria-label="Quitar esta franja de horario"
+                                    className="w-7 h-7 flex items-center justify-center bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                                    title="Quitar este horario (-)"
+                                    aria-label="Quitar este horario"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Minus className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
@@ -666,7 +677,7 @@ export const HorariosTab: React.FC = () => {
                   Insertar variable en la posición del cursor:
                 </span>
                 <div className="flex flex-wrap gap-1.5 text-xs">
-                  {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{valor}', '{alias}', '{direccion}', '{bloque_modalidad}'].map(
+                  {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{valor}', '{alias}', '{direccion}', '{link_maps}', '{bloque_modalidad}'].map(
                     v => (
                       <button
                         key={v}
@@ -794,7 +805,7 @@ export const HorariosTab: React.FC = () => {
                   Insertar variable en la posición del cursor:
                 </span>
                 <div className="flex flex-wrap gap-1.5 text-xs">
-                  {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{direccion}', '{bloque_modalidad}'].map(
+                  {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{direccion}', '{link_maps}', '{bloque_modalidad}'].map(
                     v => (
                       <button
                         key={v}
