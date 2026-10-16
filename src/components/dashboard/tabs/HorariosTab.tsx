@@ -65,6 +65,20 @@ export const HorariosTab: React.FC = () => {
   const [bloqueVideollamada, setBloqueVideollamada] = useState(() => {
     return templates.find(t => t.tipo === 'confirmacion')?.bloqueVideollamada || '';
   });
+  const [bloquePresencialRec, setBloquePresencialRec] = useState(() => {
+    return (
+      templates.find(t => t.tipo === 'recordatorio')?.bloquePresencial ||
+      templates.find(t => t.tipo === 'confirmacion')?.bloquePresencial ||
+      ''
+    );
+  });
+  const [bloqueVideollamadaRec, setBloqueVideollamadaRec] = useState(() => {
+    return (
+      templates.find(t => t.tipo === 'recordatorio')?.bloqueVideollamada ||
+      templates.find(t => t.tipo === 'confirmacion')?.bloqueVideollamada ||
+      ''
+    );
+  });
 
   // Feriados Nacionales y Asuetos
   const [filtroFeriado, setFiltroFeriado] = useState<'todos' | 'laborables' | 'no_laborables'>('todos');
@@ -96,7 +110,18 @@ export const HorariosTab: React.FC = () => {
 
   // Referencias a los cuadros de texto para inserción exacta en el cursor
   const textareaConfirmacionRef = useRef<HTMLTextAreaElement>(null);
+  const textareaPresencialRef = useRef<HTMLTextAreaElement>(null);
+  const textareaVideollamadaRef = useRef<HTMLTextAreaElement>(null);
+
   const textareaRecordatorioRef = useRef<HTMLTextAreaElement>(null);
+  const textareaPresencialRecRef = useRef<HTMLTextAreaElement>(null);
+  const textareaVideollamadaRecRef = useRef<HTMLTextAreaElement>(null);
+
+  // Destino activo para la inserción de variables en Plantilla 1 ("Confirmar por WhatsApp")
+  const [targetConfirmacion, setTargetConfirmacion] = useState<'cuerpo' | 'presencial' | 'videollamada'>('cuerpo');
+
+  // Destino activo para la inserción de variables en Plantilla 2 ("Recordar por WhatsApp")
+  const [targetRecordatorio, setTargetRecordatorio] = useState<'cuerpo' | 'presencial' | 'videollamada'>('cuerpo');
 
   const insertarVariableEnCursor = (
     textarea: HTMLTextAreaElement | null,
@@ -124,6 +149,60 @@ export const HorariosTab: React.FC = () => {
       const nuevaPos = start + variable.length;
       textarea.setSelectionRange(nuevaPos, nuevaPos);
     });
+  };
+
+  const handleInsertarEnConfirmacion = (variable: string) => {
+    if (targetConfirmacion === 'presencial') {
+      if (variable === '{bloque_modalidad}') return;
+      insertarVariableEnCursor(
+        textareaPresencialRef.current,
+        bloquePresencial,
+        setBloquePresencial,
+        variable
+      );
+    } else if (targetConfirmacion === 'videollamada') {
+      if (variable === '{bloque_modalidad}') return;
+      insertarVariableEnCursor(
+        textareaVideollamadaRef.current,
+        bloqueVideollamada,
+        setBloqueVideollamada,
+        variable
+      );
+    } else {
+      insertarVariableEnCursor(
+        textareaConfirmacionRef.current,
+        tplConfirmacion,
+        setTplConfirmacion,
+        variable
+      );
+    }
+  };
+
+  const handleInsertarEnRecordatorio = (variable: string) => {
+    if (targetRecordatorio === 'presencial') {
+      if (variable === '{bloque_modalidad}') return;
+      insertarVariableEnCursor(
+        textareaPresencialRecRef.current,
+        bloquePresencialRec,
+        setBloquePresencialRec,
+        variable
+      );
+    } else if (targetRecordatorio === 'videollamada') {
+      if (variable === '{bloque_modalidad}') return;
+      insertarVariableEnCursor(
+        textareaVideollamadaRecRef.current,
+        bloqueVideollamadaRec,
+        setBloqueVideollamadaRec,
+        variable
+      );
+    } else {
+      insertarVariableEnCursor(
+        textareaRecordatorioRef.current,
+        tplRecordatorio,
+        setTplRecordatorio,
+        variable
+      );
+    }
   };
 
   const DIAS = [
@@ -249,8 +328,8 @@ export const HorariosTab: React.FC = () => {
         return {
           ...t,
           cuerpo: tplRecordatorio,
-          bloquePresencial,
-          bloqueVideollamada,
+          bloquePresencial: bloquePresencialRec,
+          bloqueVideollamada: bloqueVideollamadaRec,
         };
       }
       return t;
@@ -296,8 +375,8 @@ export const HorariosTab: React.FC = () => {
 
   const vistaPreviaRecordatorioPresencial = resolverPlantillaMensaje(
     tplRecordatorio,
-    bloquePresencial,
-    bloqueVideollamada,
+    bloquePresencialRec,
+    bloqueVideollamadaRec,
     {
       paciente: 'Florencia Gómez',
       profesional: `${professional.titulo} ${professional.nombre}`,
@@ -314,8 +393,8 @@ export const HorariosTab: React.FC = () => {
 
   const vistaPreviaRecordatorioVirtual = resolverPlantillaMensaje(
     tplRecordatorio,
-    bloquePresencial,
-    bloqueVideollamada,
+    bloquePresencialRec,
+    bloqueVideollamadaRec,
     {
       paciente: 'Carlos Bianchi',
       profesional: `${professional.titulo} ${professional.nombre}`,
@@ -327,6 +406,48 @@ export const HorariosTab: React.FC = () => {
       modalidad: 'videollamada',
     }
   );
+
+  const renderBotonProbarWhatsApp = (mensaje: string) => {
+    const telPrivado = professional.telefonoContactoPrivado;
+    const enlace = construirEnlaceWhatsApp(telPrivado, mensaje);
+
+    if (!telPrivado || !enlace.valido) {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            alert(
+              'Para probar el mensaje en WhatsApp enviándotelo a vos mismo, cargá tu número de teléfono celular en el "Perfil del Profesional" (icono de usuario arriba a la derecha).'
+            );
+          }}
+          className="text-[11px] font-semibold text-slate-500 hover:text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+          title="Configurá tu celular en tu Perfil para enviarte mensajes de prueba"
+        >
+          <Send className="w-3 h-3 text-slate-400" />
+          <span>Probar en WhatsApp</span>
+          <span className="text-[10px] text-amber-600 bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
+            Sin tel. en perfil
+          </span>
+        </button>
+      );
+    }
+
+    return (
+      <a
+        href={enlace.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
+        title={`Abrir WhatsApp para enviarte una prueba a tu propio chat (${enlace.telefonoDisplay})`}
+      >
+        <Send className="w-3 h-3 text-emerald-600" />
+        <span>Probar en WhatsApp</span>
+        <span className="text-[10px] text-emerald-600/80 font-normal">
+          ({enlace.telefonoDisplay})
+        </span>
+      </a>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -678,25 +799,32 @@ export const HorariosTab: React.FC = () => {
                 </span>
                 <div className="flex flex-wrap gap-1.5 text-xs">
                   {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{valor}', '{alias}', '{direccion}', '{link_maps}', '{bloque_modalidad}'].map(
-                    v => (
-                      <button
-                        key={v}
-                        type="button"
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={() =>
-                          insertarVariableEnCursor(
-                            textareaConfirmacionRef.current,
-                            tplConfirmacion,
-                            setTplConfirmacion,
-                            v
-                          )
-                        }
-                        title={`Insertar ${v} donde esté el cursor`}
-                        className="px-2.5 py-1 bg-white border border-slate-200 rounded font-mono text-[11px] text-sky-800 font-semibold hover:bg-sky-50 hover:border-sky-300 transition-colors shadow-2xs active:scale-95 cursor-pointer"
-                      >
-                        {v}
-                      </button>
-                    )
+                    v => {
+                      const esBloqueModalidad = v === '{bloque_modalidad}';
+                      const deshabilitado = esBloqueModalidad && targetConfirmacion !== 'cuerpo';
+
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          disabled={deshabilitado}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => handleInsertarEnConfirmacion(v)}
+                          title={
+                            deshabilitado
+                              ? 'El bloque de modalidad solo puede insertarse en el cuerpo principal'
+                              : `Insertar ${v} donde esté el cursor`
+                          }
+                          className={`px-2.5 py-1 rounded font-mono text-[11px] font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer ${
+                            deshabilitado
+                              ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                              : 'bg-white border border-slate-200 text-sky-800 hover:bg-sky-50 hover:border-sky-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      );
+                    }
                   )}
                 </div>
               </div>
@@ -709,33 +837,126 @@ export const HorariosTab: React.FC = () => {
                   ref={textareaConfirmacionRef}
                   rows={6}
                   value={tplConfirmacion}
+                  onFocus={() => setTargetConfirmacion('cuerpo')}
+                  onClick={() => setTargetConfirmacion('cuerpo')}
+                  onKeyUp={() => setTargetConfirmacion('cuerpo')}
                   onChange={e => setTplConfirmacion(e.target.value)}
-                  className="w-full text-xs p-3 rounded-xl border border-slate-200 font-sans leading-relaxed outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600"
+                  className={`w-full text-xs p-3 rounded-xl border font-sans leading-relaxed outline-none transition-all ${
+                    targetConfirmacion === 'cuerpo'
+                      ? 'border-sky-500 ring-2 ring-sky-100 focus:border-sky-600'
+                      : 'border-slate-200 focus:border-sky-600'
+                  }`}
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-sky-600" /> Bloque condicional: Presencial
+                {/* Bloque Condicional Presencial */}
+                <div
+                  className={`p-3 rounded-xl border transition-all ${
+                    targetConfirmacion === 'presencial'
+                      ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-200 shadow-2xs'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <label className="text-xs font-semibold text-slate-800 flex items-center gap-1 mb-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Bloque condicional: Presencial</span>
                   </label>
+
+                  {/* Variables directas para Presencial */}
+                  <div className="flex flex-wrap items-center gap-1 mb-2 text-[10px]">
+                    <span className="text-slate-400 font-medium mr-0.5">Insertar:</span>
+                    {['{direccion}', '{link_maps}', '{paciente}', '{fecha}', '{hora}', '{servicio}'].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setTargetConfirmacion('presencial');
+                          insertarVariableEnCursor(
+                            textareaPresencialRef.current,
+                            bloquePresencial,
+                            setBloquePresencial,
+                            v
+                          );
+                        }}
+                        title={`Insertar ${v} en el cursor`}
+                        className="px-1.5 py-0.5 bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 rounded font-mono text-[10px] font-semibold cursor-pointer shadow-2xs active:scale-95"
+                      >
+                        + {v}
+                      </button>
+                    ))}
+                  </div>
+
                   <textarea
+                    ref={textareaPresencialRef}
                     rows={3}
                     value={bloquePresencial}
+                    onFocus={() => setTargetConfirmacion('presencial')}
+                    onClick={() => setTargetConfirmacion('presencial')}
+                    onKeyUp={() => setTargetConfirmacion('presencial')}
                     onChange={e => setBloquePresencial(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 outline-none focus:border-sky-600"
+                    placeholder="ej. 📍 Lugar: {direccion}\n🗺️ Google Maps: {link_maps}"
+                    className={`w-full text-xs p-2.5 rounded-lg border outline-none bg-white transition-all ${
+                      targetConfirmacion === 'presencial'
+                        ? 'border-sky-500 ring-2 ring-sky-100'
+                        : 'border-slate-200 focus:border-sky-600'
+                    }`}
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                    <Video className="w-3.5 h-3.5 text-emerald-600" /> Bloque condicional: Videollamada
+                {/* Bloque Condicional Videollamada */}
+                <div
+                  className={`p-3 rounded-xl border transition-all ${
+                    targetConfirmacion === 'videollamada'
+                      ? 'border-emerald-400 bg-emerald-50/20 ring-1 ring-emerald-200 shadow-2xs'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <label className="text-xs font-semibold text-slate-800 flex items-center gap-1 mb-1.5">
+                    <Video className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Bloque condicional: Videollamada</span>
                   </label>
+
+                  {/* Variables directas para Videollamada */}
+                  <div className="flex flex-wrap items-center gap-1 mb-2 text-[10px]">
+                    <span className="text-slate-400 font-medium mr-0.5">Insertar:</span>
+                    {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{valor}'].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setTargetConfirmacion('videollamada');
+                          insertarVariableEnCursor(
+                            textareaVideollamadaRef.current,
+                            bloqueVideollamada,
+                            setBloqueVideollamada,
+                            v
+                          );
+                        }}
+                        title={`Insertar ${v} en el cursor`}
+                        className="px-1.5 py-0.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded font-mono text-[10px] font-semibold cursor-pointer shadow-2xs active:scale-95"
+                      >
+                        + {v}
+                      </button>
+                    ))}
+                  </div>
+
                   <textarea
+                    ref={textareaVideollamadaRef}
                     rows={3}
                     value={bloqueVideollamada}
+                    onFocus={() => setTargetConfirmacion('videollamada')}
+                    onClick={() => setTargetConfirmacion('videollamada')}
+                    onKeyUp={() => setTargetConfirmacion('videollamada')}
                     onChange={e => setBloqueVideollamada(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-lg border border-slate-200 outline-none focus:border-emerald-600"
+                    placeholder="ej. 📞 Videollamada por WhatsApp: te llamaremos a la hora de tu turno."
+                    className={`w-full text-xs p-2.5 rounded-lg border outline-none bg-white transition-all ${
+                      targetConfirmacion === 'videollamada'
+                        ? 'border-emerald-500 ring-2 ring-emerald-100'
+                        : 'border-slate-200 focus:border-emerald-600'
+                    }`}
                   />
                 </div>
               </div>
@@ -748,16 +969,7 @@ export const HorariosTab: React.FC = () => {
                       <MapPin className="w-3.5 h-3.5 text-sky-600" />
                       <span>Vista previa del mensaje Presencial:</span>
                     </span>
-                    <a
-                      href={construirEnlaceWhatsApp(professional.telefonoContactoPrivado, vistaPreviaConfirmacionPresencial).url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Abrir WhatsApp para verificar emoticones y texto"
-                    >
-                      <Send className="w-3 h-3" />
-                      <span>Probar en WhatsApp</span>
-                    </a>
+                    {renderBotonProbarWhatsApp(vistaPreviaConfirmacionPresencial)}
                   </div>
                   <div className="bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed shadow-2xs font-sans">
                     {vistaPreviaConfirmacionPresencial}
@@ -770,16 +982,7 @@ export const HorariosTab: React.FC = () => {
                       <Video className="w-3.5 h-3.5 text-emerald-600" />
                       <span>Vista previa del mensaje Videollamada:</span>
                     </span>
-                    <a
-                      href={construirEnlaceWhatsApp(professional.telefonoContactoPrivado, vistaPreviaConfirmacionVirtual).url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Abrir WhatsApp para verificar emoticones y texto"
-                    >
-                      <Send className="w-3 h-3" />
-                      <span>Probar en WhatsApp</span>
-                    </a>
+                    {renderBotonProbarWhatsApp(vistaPreviaConfirmacionVirtual)}
                   </div>
                   <div className="bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed shadow-2xs font-sans">
                     {vistaPreviaConfirmacionVirtual}
@@ -806,25 +1009,32 @@ export const HorariosTab: React.FC = () => {
                 </span>
                 <div className="flex flex-wrap gap-1.5 text-xs">
                   {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}', '{direccion}', '{link_maps}', '{bloque_modalidad}'].map(
-                    v => (
-                      <button
-                        key={v}
-                        type="button"
-                        onMouseDown={e => e.preventDefault()}
-                        onClick={() =>
-                          insertarVariableEnCursor(
-                            textareaRecordatorioRef.current,
-                            tplRecordatorio,
-                            setTplRecordatorio,
-                            v
-                          )
-                        }
-                        title={`Insertar ${v} donde esté el cursor`}
-                        className="px-2.5 py-1 bg-white border border-slate-200 rounded font-mono text-[11px] text-emerald-800 font-semibold hover:bg-emerald-50 hover:border-emerald-300 transition-colors shadow-2xs active:scale-95 cursor-pointer"
-                      >
-                        {v}
-                      </button>
-                    )
+                    v => {
+                      const esBloqueModalidad = v === '{bloque_modalidad}';
+                      const deshabilitado = esBloqueModalidad && targetRecordatorio !== 'cuerpo';
+
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          disabled={deshabilitado}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => handleInsertarEnRecordatorio(v)}
+                          title={
+                            deshabilitado
+                              ? 'El bloque de modalidad solo puede insertarse en el cuerpo principal'
+                              : `Insertar ${v} donde esté el cursor`
+                          }
+                          className={`px-2.5 py-1 rounded font-mono text-[11px] font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer ${
+                            deshabilitado
+                              ? 'opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border border-slate-200'
+                              : 'bg-white border border-slate-200 text-emerald-800 hover:bg-emerald-50 hover:border-emerald-300'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      );
+                    }
                   )}
                 </div>
               </div>
@@ -837,9 +1047,128 @@ export const HorariosTab: React.FC = () => {
                   ref={textareaRecordatorioRef}
                   rows={5}
                   value={tplRecordatorio}
+                  onFocus={() => setTargetRecordatorio('cuerpo')}
+                  onClick={() => setTargetRecordatorio('cuerpo')}
+                  onKeyUp={() => setTargetRecordatorio('cuerpo')}
                   onChange={e => setTplRecordatorio(e.target.value)}
-                  className="w-full text-xs p-3 rounded-xl border border-slate-200 font-sans leading-relaxed outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600"
+                  className={`w-full text-xs p-3 rounded-xl border font-sans leading-relaxed outline-none transition-all ${
+                    targetRecordatorio === 'cuerpo'
+                      ? 'border-emerald-500 ring-2 ring-emerald-100 focus:border-emerald-600'
+                      : 'border-slate-200 focus:border-sky-600'
+                  }`}
                 />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Bloque Condicional Presencial (Recordatorio) */}
+                <div
+                  className={`p-3 rounded-xl border transition-all ${
+                    targetRecordatorio === 'presencial'
+                      ? 'border-sky-400 bg-sky-50/20 ring-1 ring-sky-200 shadow-2xs'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <label className="text-xs font-semibold text-slate-800 flex items-center gap-1 mb-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Bloque condicional: Presencial</span>
+                  </label>
+
+                  {/* Variables directas para Presencial */}
+                  <div className="flex flex-wrap items-center gap-1 mb-2 text-[10px]">
+                    <span className="text-slate-400 font-medium mr-0.5">Insertar:</span>
+                    {['{direccion}', '{link_maps}', '{paciente}', '{fecha}', '{hora}', '{servicio}'].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setTargetRecordatorio('presencial');
+                          insertarVariableEnCursor(
+                            textareaPresencialRecRef.current,
+                            bloquePresencialRec,
+                            setBloquePresencialRec,
+                            v
+                          );
+                        }}
+                        title={`Insertar ${v} en el cursor`}
+                        className="px-1.5 py-0.5 bg-white hover:bg-sky-50 text-sky-800 border border-slate-200 hover:border-sky-300 rounded font-mono text-[10px] font-semibold cursor-pointer shadow-2xs active:scale-95"
+                      >
+                        + {v}
+                      </button>
+                    ))}
+                  </div>
+
+                  <textarea
+                    ref={textareaPresencialRecRef}
+                    rows={3}
+                    value={bloquePresencialRec}
+                    onFocus={() => setTargetRecordatorio('presencial')}
+                    onClick={() => setTargetRecordatorio('presencial')}
+                    onKeyUp={() => setTargetRecordatorio('presencial')}
+                    onChange={e => setBloquePresencialRec(e.target.value)}
+                    placeholder="ej. 📍 Lugar: {direccion}\n🗺️ Google Maps: {link_maps}"
+                    className={`w-full text-xs p-2.5 rounded-lg border outline-none bg-white transition-all ${
+                      targetRecordatorio === 'presencial'
+                        ? 'border-sky-500 ring-2 ring-sky-100'
+                        : 'border-slate-200 focus:border-sky-600'
+                    }`}
+                  />
+                </div>
+
+                {/* Bloque Condicional Videollamada (Recordatorio) */}
+                <div
+                  className={`p-3 rounded-xl border transition-all ${
+                    targetRecordatorio === 'videollamada'
+                      ? 'border-emerald-400 bg-emerald-50/20 ring-1 ring-emerald-200 shadow-2xs'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <label className="text-xs font-semibold text-slate-800 flex items-center gap-1 mb-1.5">
+                    <Video className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Bloque condicional: Videollamada</span>
+                  </label>
+
+                  {/* Variables directas para Videollamada */}
+                  <div className="flex flex-wrap items-center gap-1 mb-2 text-[10px]">
+                    <span className="text-slate-400 font-medium mr-0.5">Insertar:</span>
+                    {['{paciente}', '{profesional}', '{fecha}', '{hora}', '{servicio}'].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => {
+                          setTargetRecordatorio('videollamada');
+                          insertarVariableEnCursor(
+                            textareaVideollamadaRecRef.current,
+                            bloqueVideollamadaRec,
+                            setBloqueVideollamadaRec,
+                            v
+                          );
+                        }}
+                        title={`Insertar ${v} en el cursor`}
+                        className="px-1.5 py-0.5 bg-white hover:bg-emerald-50 text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded font-mono text-[10px] font-semibold cursor-pointer shadow-2xs active:scale-95"
+                      >
+                        + {v}
+                      </button>
+                    ))}
+                  </div>
+
+                  <textarea
+                    ref={textareaVideollamadaRecRef}
+                    rows={3}
+                    value={bloqueVideollamadaRec}
+                    onFocus={() => setTargetRecordatorio('videollamada')}
+                    onClick={() => setTargetRecordatorio('videollamada')}
+                    onKeyUp={() => setTargetRecordatorio('videollamada')}
+                    onChange={e => setBloqueVideollamadaRec(e.target.value)}
+                    placeholder="ej. 📞 Videollamada por WhatsApp: te llamaremos a la hora de tu turno."
+                    className={`w-full text-xs p-2.5 rounded-lg border outline-none bg-white transition-all ${
+                      targetRecordatorio === 'videollamada'
+                        ? 'border-emerald-500 ring-2 ring-emerald-100'
+                        : 'border-slate-200 focus:border-emerald-600'
+                    }`}
+                  />
+                </div>
               </div>
 
               {/* Vistas previas en vivo del Recordatorio */}
@@ -850,16 +1179,7 @@ export const HorariosTab: React.FC = () => {
                       <MapPin className="w-3.5 h-3.5 text-sky-600" />
                       <span>Vista previa del recordatorio (Presencial):</span>
                     </span>
-                    <a
-                      href={construirEnlaceWhatsApp(professional.telefonoContactoPrivado, vistaPreviaRecordatorioPresencial).url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Abrir WhatsApp para verificar emoticones y texto"
-                    >
-                      <Send className="w-3 h-3" />
-                      <span>Probar en WhatsApp</span>
-                    </a>
+                    {renderBotonProbarWhatsApp(vistaPreviaRecordatorioPresencial)}
                   </div>
                   <div className="bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed shadow-2xs font-sans">
                     {vistaPreviaRecordatorioPresencial}
@@ -872,16 +1192,7 @@ export const HorariosTab: React.FC = () => {
                       <Video className="w-3.5 h-3.5 text-emerald-600" />
                       <span>Vista previa del recordatorio (Videollamada):</span>
                     </span>
-                    <a
-                      href={construirEnlaceWhatsApp(professional.telefonoContactoPrivado, vistaPreviaRecordatorioVirtual).url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Abrir WhatsApp para verificar emoticones y texto"
-                    >
-                      <Send className="w-3 h-3" />
-                      <span>Probar en WhatsApp</span>
-                    </a>
+                    {renderBotonProbarWhatsApp(vistaPreviaRecordatorioVirtual)}
                   </div>
                   <div className="bg-white p-3 rounded-lg border border-slate-200 text-xs text-slate-700 whitespace-pre-line leading-relaxed shadow-2xs font-sans">
                     {vistaPreviaRecordatorioVirtual}

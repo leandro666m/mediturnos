@@ -32,6 +32,7 @@ import {
   prepararVariablesDesdeTurno,
   resolverPlantillaMensaje,
 } from '../../../modules/messaging';
+import { getSlotsForDate, validateSlotTime } from '../../../modules/availability';
 
 interface AgendaTabProps {
   onVerFichaPaciente: (pacienteId: string) => void;
@@ -45,6 +46,9 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
     services,
     locations,
     templates,
+    workingHours,
+    holidays,
+    timeOffs,
     changeAppointmentStatus,
     setAppointmentPayment,
     rescheduleAppointment,
@@ -59,9 +63,49 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
   const [turnoAReprogramar, setTurnoAReprogramar] = useState<Appointment | null>(null);
   const [nuevaFecha, setNuevaFecha] = useState('');
   const [nuevaHora, setNuevaHora] = useState('10:00');
+  const [esSobreturnoReprog, setEsSobreturnoReprog] = useState(false);
+  const [errorReprog, setErrorReprog] = useState('');
 
   // Modal de Historial
   const [turnoHistorial, setTurnoHistorial] = useState<Appointment | null>(null);
+
+  // Disponibilidad y validación en tiempo real para Reprogramación
+  const servicioTurnoReprog = useMemo(() => {
+    if (!turnoAReprogramar) return null;
+    return services.find(s => s.id === turnoAReprogramar.serviceId) || services[0];
+  }, [turnoAReprogramar, services]);
+
+  const disponibilidadReprog = useMemo(() => {
+    if (!turnoAReprogramar || !nuevaFecha || !servicioTurnoReprog) return null;
+    return getSlotsForDate({
+      dateString: nuevaFecha,
+      service: servicioTurnoReprog,
+      professional,
+      workingHours,
+      holidays,
+      timeOffs,
+      appointments,
+      excludeAppointmentId: turnoAReprogramar.id,
+      modalidad: turnoAReprogramar.modalidad,
+      ignoreAnticipation: true,
+    });
+  }, [turnoAReprogramar, nuevaFecha, servicioTurnoReprog, professional, workingHours, holidays, timeOffs, appointments]);
+
+  const validacionHoraReprog = useMemo(() => {
+    if (!turnoAReprogramar || !nuevaFecha || !nuevaHora || !servicioTurnoReprog) return null;
+    return validateSlotTime({
+      dateString: nuevaFecha,
+      hora: nuevaHora,
+      service: servicioTurnoReprog,
+      professional,
+      workingHours,
+      holidays,
+      timeOffs,
+      appointments,
+      excludeAppointmentId: turnoAReprogramar.id,
+      modalidad: turnoAReprogramar.modalidad,
+    });
+  }, [turnoAReprogramar, nuevaFecha, nuevaHora, servicioTurnoReprog, professional, workingHours, holidays, timeOffs, appointments]);
 
   // Filtrado de turnos
   const turnosFiltrados = useMemo(() => {
@@ -164,6 +208,12 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
     e.preventDefault();
     if (!turnoAReprogramar || !nuevaFecha || !nuevaHora) return;
 
+    // Validación contra la disponibilidad de Horarios & Especialidad
+    if (!esSobreturnoReprog && validacionHoraReprog && !validacionHoraReprog.valido) {
+      setErrorReprog(validacionHoraReprog.mensaje);
+      return;
+    }
+
     const [anio, mes, dia] = nuevaFecha.split('-').map(Number);
     const [hora, min] = nuevaHora.split(':').map(Number);
     const inicio = new Date(anio, mes - 1, dia, hora, min, 0, 0);
@@ -172,11 +222,18 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
     const duracion = srv ? srv.duracionMin : 30;
     const fin = new Date(inicio.getTime() + duracion * 60 * 1000);
 
-    const res = rescheduleAppointment(turnoAReprogramar.id, inicio.toISOString(), fin.toISOString());
+    const res = rescheduleAppointment(
+      turnoAReprogramar.id,
+      inicio.toISOString(),
+      fin.toISOString(),
+      esSobreturnoReprog
+    );
     if (res.success) {
       setTurnoAReprogramar(null);
+      setErrorReprog('');
+      setEsSobreturnoReprog(false);
     } else {
-      alert(res.error || 'No se pudo reprogramar.');
+      setErrorReprog(res.error || 'No se pudo reprogramar.');
     }
   };
 
@@ -524,9 +581,11 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                           setTurnoAReprogramar(turno);
                           setNuevaFecha(turno.inicio.slice(0, 10));
                           setNuevaHora(turno.inicio.slice(11, 16));
+                          setEsSobreturnoReprog(false);
+                          setErrorReprog('');
                         }}
                         title="Reprogramar fecha u horario"
-                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
@@ -541,59 +600,260 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
         )}
       </div>
 
-      {/* MODAL DE REPROGRAMACIÓN ATÓMICA (Regla 2.8) */}
+      {/* MODAL DE REPROGRAMACIÓN SUJETO A HORARIOS & ESPECIALIDAD */}
       {turnoAReprogramar && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-900 mb-1">
-              Reprogramar Turno
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Turno actual de <strong>{turnoAReprogramar.pacienteNombre}</strong> ({formatearFechaCorta(turnoAReprogramar.inicio)} a las {formatearHora(turnoAReprogramar.inicio)}).
-            </p>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-sky-600" />
+                  <span>Reprogramar Turno</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Los nuevos horarios están sujetos a las disponibilidades cargadas en <strong>Horarios & Especialidad</strong>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTurnoAReprogramar(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Tarjeta del Turno Original */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 mb-4 flex items-center justify-between gap-2">
+              <div>
+                <div className="font-bold text-slate-900">{turnoAReprogramar.pacienteNombre}</div>
+                <div className="text-slate-500 text-[11px] mt-0.5">
+                  {servicioTurnoReprog?.nombre || 'Consulta'} ({servicioTurnoReprog?.duracionMin || 30} min) ·{' '}
+                  <span className="capitalize">{turnoAReprogramar.modalidad}</span>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Turno actual</span>
+                <span className="font-semibold text-slate-800">
+                  {formatearFechaCorta(turnoAReprogramar.inicio)} a las {formatearHora(turnoAReprogramar.inicio)}
+                </span>
+              </div>
+            </div>
 
             <form onSubmit={handleConfirmarReprogramacion} className="space-y-4">
+              {/* Selección de Fecha */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nueva Fecha *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Nueva Fecha *
+                  </label>
+                  {/* Atajos de Fecha */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const hoy = new Date().toISOString().slice(0, 10);
+                        setNuevaFecha(hoy);
+                        setErrorReprog('');
+                      }}
+                      className="px-2 py-0.5 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors cursor-pointer"
+                    >
+                      Hoy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const manana = new Date();
+                        manana.setDate(manana.getDate() + 1);
+                        setNuevaFecha(manana.toISOString().slice(0, 10));
+                        setErrorReprog('');
+                      }}
+                      className="px-2 py-0.5 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors cursor-pointer"
+                    >
+                      Mañana
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const proxSem = new Date();
+                        proxSem.setDate(proxSem.getDate() + 7);
+                        setNuevaFecha(proxSem.toISOString().slice(0, 10));
+                        setErrorReprog('');
+                      }}
+                      className="px-2 py-0.5 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md transition-colors cursor-pointer"
+                    >
+                      +7 días
+                    </button>
+                  </div>
+                </div>
                 <input
                   type="date"
                   required
                   value={nuevaFecha}
-                  onChange={e => setNuevaFecha(e.target.value)}
-                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 outline-none focus:border-sky-600"
+                  onChange={e => {
+                    setNuevaFecha(e.target.value);
+                    setErrorReprog('');
+                  }}
+                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600"
                 />
               </div>
 
+              {/* Banner de Jornada Diaria / No Laborable */}
+              {disponibilidadReprog && (
+                <div>
+                  {!disponibilidadReprog.isWorkingDay ? (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Día sin atención médica configurada:</strong>
+                        <p className="mt-0.5">{disponibilidadReprog.reasonUnavailable}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 bg-sky-50/80 border border-sky-200/80 rounded-xl text-xs text-sky-950 flex items-start gap-2">
+                      <Calendar className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{disponibilidadReprog.diaNombre}:</span>{' '}
+                        <span>{disponibilidadReprog.franjasTexto}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Grilla de Huecos Libres Disponibles */}
+              {disponibilidadReprog?.isWorkingDay && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Horarios disponibles para {nuevaFecha}:
+                    </label>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      {disponibilidadReprog.slots.length} huecos libres
+                    </span>
+                  </div>
+
+                  {disponibilidadReprog.slots.length > 0 ? (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-h-44 overflow-y-auto">
+                      <div className="flex flex-wrap gap-1.5">
+                        {disponibilidadReprog.slots.map(s => {
+                          const isSelected = nuevaHora === s.hora;
+                          return (
+                            <button
+                              key={s.inicio}
+                              type="button"
+                              onClick={() => {
+                                setNuevaHora(s.hora);
+                                setErrorReprog('');
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-sky-600 text-white border-sky-600 shadow-xs ring-2 ring-sky-500/30'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-sky-50 hover:border-sky-300'
+                              }`}
+                            >
+                              {s.hora} hs
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 text-center">
+                      No hay turnos libres disponibles en la configuración para esta fecha.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Nueva Hora con Validación en Tiempo Real */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nueva Hora de Inicio *
+                  Hora de Inicio *
                 </label>
                 <input
                   type="time"
                   required
                   value={nuevaHora}
-                  onChange={e => setNuevaHora(e.target.value)}
-                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 outline-none focus:border-sky-600"
+                  onChange={e => {
+                    setNuevaHora(e.target.value);
+                    setErrorReprog('');
+                  }}
+                  className="w-full text-xs p-2.5 rounded-lg border border-slate-200 outline-none focus:border-sky-600 focus:ring-1 focus:ring-sky-600"
                 />
+
+                {/* Feedback de validación en tiempo real */}
+                {validacionHoraReprog && (
+                  <div
+                    className={`mt-2 p-2.5 rounded-xl text-xs flex items-start gap-2 ${
+                      validacionHoraReprog.valido
+                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                        : 'bg-rose-50 border border-rose-200 text-rose-900'
+                    }`}
+                  >
+                    {validacionHoraReprog.valido ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <span className="leading-snug">{validacionHoraReprog.mensaje}</span>
+                  </div>
+                )}
               </div>
 
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900">
+              {/* Sobreturno como Excepción */}
+              <div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-amber-900 cursor-pointer bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                  <input
+                    type="checkbox"
+                    checked={esSobreturnoReprog}
+                    onChange={e => {
+                      setEsSobreturnoReprog(e.target.checked);
+                      setErrorReprog('');
+                    }}
+                    className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span>Habilitar como Sobreturno / Excepción de agenda</span>
+                </label>
+                {esSobreturnoReprog && (
+                  <p className="text-[11px] text-amber-700 mt-1 pl-1">
+                    Se forzará la reprogramación como excepción médica fuera de la grilla habitual.
+                  </p>
+                )}
+              </div>
+
+              {/* Mensaje de error general si ocurre */}
+              {errorReprog && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorReprog}</span>
+                </div>
+              )}
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600">
                 Al confirmar, el turno original pasará a estado <strong>Reprogramado</strong> y quedará vinculado al nuevo horario.
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setTurnoAReprogramar(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                  onClick={() => {
+                    setTurnoAReprogramar(null);
+                    setErrorReprog('');
+                    setEsSobreturnoReprog(false);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-700 shadow-xs"
+                  disabled={!esSobreturnoReprog && validacionHoraReprog ? !validacionHoraReprog.valido : false}
+                  className={`px-4 py-2 text-xs font-bold rounded-lg shadow-xs transition-all ${
+                    !esSobreturnoReprog && validacionHoraReprog && !validacionHoraReprog.valido
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-sky-600 text-white hover:bg-sky-700 cursor-pointer'
+                  }`}
                 >
                   Confirmar Reprogramación
                 </button>

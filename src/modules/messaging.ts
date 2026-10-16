@@ -73,8 +73,8 @@ export function resolverPlantillaMensaje(
 
   // Reemplazar {direccion} y {link_maps} dentro del bloque si aplica
   let bloqueResuelto = bloqueElegido
-    .replace('{direccion}', direccionConMaps)
-    .replace('{link_maps}', variables.link_maps || '')
+    .replace(/{direccion}/g, direccionConMaps)
+    .replace(/{link_maps}/g, variables.link_maps || '')
     .trim();
 
   // Si no hay link_maps, limpiar líneas sueltas de Google Maps en el bloque
@@ -83,7 +83,7 @@ export function resolverPlantillaMensaje(
   }
 
   // 2. Reemplazar {bloque_modalidad} en el cuerpo principal
-  let texto = cuerpo.replace('{bloque_modalidad}', bloqueResuelto);
+  let texto = cuerpo.replace(/{bloque_modalidad}/g, bloqueResuelto);
 
   // 3. Reemplazar variables comunes
   texto = texto

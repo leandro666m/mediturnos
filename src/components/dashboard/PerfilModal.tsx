@@ -16,9 +16,11 @@ import {
   AlertCircle,
   Building2,
   ExternalLink,
+  Phone,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { FontSizePreference, Location } from '../../types';
+import { normalizarTelefonoArgentino } from '../../modules/format';
 
 interface PerfilModalProps {
   isOpen: boolean;
@@ -33,12 +35,17 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
   const [especialidad, setEspecialidad] = useState(professional.especialidad);
   const [mn, setMn] = useState(professional.matriculaNacional);
   const [mp, setMp] = useState(professional.matriculaProvincial);
+  const [telefono, setTelefono] = useState(professional.telefonoContactoPrivado || '');
   const [alias, setAlias] = useState(professional.aliasCobro);
   const [titular, setTitular] = useState(professional.titularCobro);
   const [slug, setSlug] = useState(professional.slug);
   const [fotoPerfil, setFotoPerfil] = useState<string>(professional.fotoPerfil || '');
   const [tamanoTexto, setTamanoTextoState] = useState<FontSizePreference>(professional.tamanoTexto || 'predeterminado');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTelefono(professional.telefonoContactoPrivado || '');
+  }, [professional.telefonoContactoPrivado]);
 
   // Estados para el ABM de direcciones (Ubicaciones)
   const [listaLocations, setListaLocations] = useState<Location[]>(locations);
@@ -205,12 +212,16 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const normTel = normalizarTelefonoArgentino(telefono);
+    const telAGuardar = normTel.valido ? normTel.e164 : telefono.trim();
+
     updateProfessional({
       nombre,
       titulo,
       especialidad,
       matriculaNacional: mn,
       matriculaProvincial: mp,
+      telefonoContactoPrivado: telAGuardar,
       aliasCobro: alias,
       titularCobro: titular,
       slug: slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-'),
@@ -364,6 +375,49 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                 className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600 tabular-nums"
               />
             </div>
+          </div>
+
+          {/* TELÉFONO DE CONTACTO PRIVADO / WHATSAPP PARA PRUEBAS Y ALERTAS */}
+          <div className="p-3.5 bg-emerald-50/60 border border-emerald-200/90 rounded-2xl space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Teléfono celular / WhatsApp propio (Privado)</span>
+              </label>
+              <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300">
+                Solo uso interno
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              Ingresá tu número celular para la función <strong>«Probar en WhatsApp»</strong> (te envía el mensaje de prueba a vos mismo para verificar cómo queda antes de interactuar con pacientes). <em>NUNCA se muestra públicamente a los pacientes en el portal.</em>
+            </p>
+            <input
+              type="tel"
+              value={telefono}
+              onChange={e => setTelefono(e.target.value)}
+              placeholder="ej. 11 4889-9221 o +54 9 11 4889-9221"
+              className="w-full p-2.5 bg-white border border-slate-300 rounded-lg outline-none focus:border-emerald-600 text-xs font-mono"
+            />
+            {telefono.trim() && (
+              <div className="pt-0.5 text-[11px]">
+                {(() => {
+                  const norm = normalizarTelefonoArgentino(telefono);
+                  if (norm.valido) {
+                    return (
+                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span>Número válido para WhatsApp: {norm.display}</span>
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="text-amber-700 font-medium">
+                      ⚠️ Ingresá código de área y número de celular (ej. 11 4889-9221).
+                    </span>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           {/* ABM DE DIRECCIONES DE ATENCIÓN (Ubicación donde atiende el profesional) */}

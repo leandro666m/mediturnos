@@ -83,7 +83,8 @@ interface AppContextType {
   rescheduleAppointment: (
     appointmentId: string,
     nuevoInicio: string,
-    nuevoFin: string
+    nuevoFin: string,
+    esSobreturno?: boolean
   ) => { success: boolean; newAppointment?: Appointment; error?: string };
   saveConsultationNote: (note: Partial<ConsultationNote> & { patientId: string }) => ConsultationNote;
   deleteConsultationNote: (noteId: string) => void;
@@ -584,7 +585,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rescheduleAppointment = (
     appointmentId: string,
     nuevoInicio: string,
-    nuevoFin: string
+    nuevoFin: string,
+    esSobreturno?: boolean
   ): { success: boolean; newAppointment?: Appointment; error?: string } => {
     const turnoOriginal = appointments.find(a => a.id === appointmentId);
     if (!turnoOriginal) {
@@ -599,6 +601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       inicio: nuevoInicio,
       fin: nuevoFin,
       estado: 'pendiente',
+      esSobreturno: esSobreturno !== undefined ? esSobreturno : turnoOriginal.esSobreturno,
       reprogramadoDe: turnoOriginal.id,
       creadoEn: new Date().toISOString(),
     };

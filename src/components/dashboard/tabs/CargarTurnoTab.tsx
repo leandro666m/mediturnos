@@ -22,7 +22,7 @@ import {
   normalizarTelefonoArgentino,
   validarDni,
 } from '../../../modules/format';
-import { calculateAvailability } from '../../../modules/availability';
+import { getSlotsForDate, validateSlotTime } from '../../../modules/availability';
 
 interface CargarTurnoTabProps {
   onTurnoAgendado: () => void;
@@ -110,21 +110,38 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
     }
   };
 
-  // Huecos disponibles calculados para la fecha seleccionada
-  const huecosDelDia = useMemo(() => {
-    if (!servicioSeleccionado) return [];
-    const dias = calculateAvailability({
-      professional,
+  // Disponibilidad y huecos del día según Horarios & Especialidad
+  const disponibilidadDia = useMemo(() => {
+    if (!servicioSeleccionado || !fechaTurno) return null;
+    return getSlotsForDate({
+      dateString: fechaTurno,
       service: servicioSeleccionado,
+      professional,
       workingHours,
       holidays,
       timeOffs,
       appointments,
       holds,
+      modalidad,
+      ignoreAnticipation: true,
     });
-    const diaEncontrado = dias.find(d => d.fecha === fechaTurno);
-    return diaEncontrado ? diaEncontrado.huecos : [];
-  }, [professional, servicioSeleccionado, workingHours, holidays, timeOffs, appointments, holds, fechaTurno]);
+  }, [servicioSeleccionado, fechaTurno, professional, workingHours, holidays, timeOffs, appointments, holds, modalidad]);
+
+  // Validación minuciosa de la hora seleccionada
+  const validacionHora = useMemo(() => {
+    if (!servicioSeleccionado || !fechaTurno || !horaTurno) return null;
+    return validateSlotTime({
+      dateString: fechaTurno,
+      hora: horaTurno,
+      service: servicioSeleccionado,
+      professional,
+      workingHours,
+      holidays,
+      timeOffs,
+      appointments,
+      modalidad,
+    });
+  }, [servicioSeleccionado, fechaTurno, horaTurno, professional, workingHours, holidays, timeOffs, appointments, modalidad]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,6 +152,11 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
     if (!vDni.valido) errs.dni = 'DNI inválido (7 u 8 dígitos).';
     const normTel = normalizarTelefonoArgentino(telefono);
     if (!normTel.valido) errs.telefono = 'Teléfono celular argentino inválido.';
+
+    // Validación según Horarios & Especialidad
+    if (!esSobreturno && validacionHora && !validacionHora.valido) {
+      errs.horaTurno = validacionHora.mensaje;
+    }
 
     if (Object.keys(errs).length > 0) {
       setErrores(errs);
@@ -324,14 +346,72 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Fecha del Turno *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  Fecha del Turno *
+                </label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const hoy = new Date().toISOString().slice(0, 10);
+                      setFechaTurno(hoy);
+                      setErrores(prev => {
+                        const n = { ...prev };
+                        delete n.horaTurno;
+                        return n;
+                      });
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const manana = new Date();
+                      manana.setDate(manana.getDate() + 1);
+                      setFechaTurno(manana.toISOString().slice(0, 10));
+                      setErrores(prev => {
+                        const n = { ...prev };
+                        delete n.horaTurno;
+                        return n;
+                      });
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
+                  >
+                    Mañana
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prox = new Date();
+                      prox.setDate(prox.getDate() + 7);
+                      setFechaTurno(prox.toISOString().slice(0, 10));
+                      setErrores(prev => {
+                        const n = { ...prev };
+                        delete n.horaTurno;
+                        return n;
+                      });
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors cursor-pointer"
+                  >
+                    +7 días
+                  </button>
+                </div>
+              </div>
               <input
                 type="date"
                 required
                 value={fechaTurno}
-                onChange={e => setFechaTurno(e.target.value)}
+                onChange={e => {
+                  setFechaTurno(e.target.value);
+                  setErrores(prev => {
+                    const n = { ...prev };
+                    delete n.horaTurno;
+                    return n;
+                  });
+                }}
                 className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none"
               />
             </div>
@@ -344,9 +424,48 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                 type="time"
                 required
                 value={horaTurno}
-                onChange={e => setHoraTurno(e.target.value)}
+                onChange={e => {
+                  setHoraTurno(e.target.value);
+                  setErrores(prev => {
+                    const n = { ...prev };
+                    delete n.horaTurno;
+                    return n;
+                  });
+                }}
                 className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none"
               />
+              {/* Feedback de validación en tiempo real */}
+              {validacionHora && (
+                <div
+                  className={`mt-1.5 p-2 rounded-lg text-xs flex items-start gap-1.5 ${
+                    validacionHora.valido
+                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                      : esSobreturno
+                      ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                      : 'bg-rose-50 border border-rose-200 text-rose-900'
+                  }`}
+                >
+                  {validacionHora.valido ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle
+                      className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+                        esSobreturno ? 'text-amber-600' : 'text-rose-600'
+                      }`}
+                    />
+                  )}
+                  <span className="leading-snug">
+                    {validacionHora.valido
+                      ? `✓ ${validacionHora.mensaje}`
+                      : esSobreturno
+                      ? `${validacionHora.mensaje} (Sobreturno habilitado como excepción)`
+                      : validacionHora.mensaje}
+                  </span>
+                </div>
+              )}
+              {errores.horaTurno && (
+                <p className="text-[11px] text-rose-600 font-medium mt-1">{errores.horaTurno}</p>
+              )}
             </div>
 
             <div className="flex items-end pb-1">
@@ -354,7 +473,14 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                 <input
                   type="checkbox"
                   checked={esSobreturno}
-                  onChange={e => setEsSobreturno(e.target.checked)}
+                  onChange={e => {
+                    setEsSobreturno(e.target.checked);
+                    setErrores(prev => {
+                      const n = { ...prev };
+                      delete n.horaTurno;
+                      return n;
+                    });
+                  }}
                   className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
                 />
                 <span>Habilitar como Sobreturno</span>
@@ -362,28 +488,66 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             </div>
           </div>
 
-          {/* Atajos de huecos libres para la fecha */}
-          {!esSobreturno && huecosDelDia.length > 0 && (
+          {/* Banner de Jornada Diaria / No Laborable según Horarios & Especialidad */}
+          {disponibilidadDia && (
+            <div className="mt-3">
+              {!disponibilidadDia.isWorkingDay ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Día sin atención médica configurada:</strong>
+                    <p className="mt-0.5">{disponibilidadDia.reasonUnavailable}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-sky-50/80 border border-sky-200/80 rounded-xl text-xs text-sky-950 flex items-start gap-2">
+                  <Calendar className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">{disponibilidadDia.diaNombre}:</span>{' '}
+                    <span>{disponibilidadDia.franjasTexto}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Atajos de huecos libres para la fecha según Horarios & Especialidad */}
+          {disponibilidadDia?.isWorkingDay && (
             <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                Huecos libres calculados para el {fechaTurno}:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {huecosDelDia.map(h => (
-                  <button
-                    key={h.inicio}
-                    type="button"
-                    onClick={() => setHoraTurno(h.inicio.slice(11, 16))}
-                    className={`px-2 py-1 rounded text-xs font-medium border transition-all ${
-                      horaTurno === h.inicio.slice(11, 16)
-                        ? 'bg-sky-600 text-white border-sky-600'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {formatearHora(h.inicio)}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  Horarios libres según 'Horarios & Especialidad' ({disponibilidadDia.slots.length} disponibles):
+                </span>
               </div>
+              {disponibilidadDia.slots.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
+                  {disponibilidadDia.slots.map(s => (
+                    <button
+                      key={s.inicio}
+                      type="button"
+                      onClick={() => {
+                        setHoraTurno(s.hora);
+                        setErrores(prev => {
+                          const n = { ...prev };
+                          delete n.horaTurno;
+                          return n;
+                        });
+                      }}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        horaTurno === s.hora
+                          ? 'bg-sky-600 text-white border-sky-600 shadow-xs ring-2 ring-sky-500/30'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-sky-50 hover:border-sky-300'
+                      }`}
+                    >
+                      {s.hora} hs
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500 py-1">
+                  No hay horarios libres disponibles para la fecha seleccionada según la configuración.
+                </div>
+              )}
             </div>
           )}
         </div>
