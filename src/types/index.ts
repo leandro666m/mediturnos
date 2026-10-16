@@ -54,6 +54,8 @@ export interface TimeOff {
   motivo: string;
 }
 
+export type FontSizePreference = 'minimo' | 'predeterminado' | 'grande';
+
 export interface Professional {
   id: string;
   publicId: string;
@@ -69,6 +71,7 @@ export interface Professional {
   agendaPausada: boolean;
   telefonoContactoPrivado: string; // Solo interno, NUNCA visible al paciente (D-17)
   fotoPerfil?: string; // URL o base64 de la foto de perfil del profesional
+  tamanoTexto?: FontSizePreference; // 'minimo' (compacto), 'predeterminado' (estándar), 'grande' (ampliado)
   parametros: {
     grillaMin: number;
     anticipacionMinHoras: number;

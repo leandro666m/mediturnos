@@ -135,32 +135,85 @@ export const HorariosTab: React.FC = () => {
     { num: 7, nombre: 'Domingo' },
   ];
 
-  // Actualizar franja horaria
+  // Actualizar esquema de franjas horarias
   const handleToggleDiaActivo = (diaNum: number) => {
     const franjas = workingHours.filter(wh => wh.diaSemana === diaNum);
     if (franjas.length > 0) {
-      const nuevoEstado = !franjas[0].activo;
+      const algunActivo = franjas.some(wh => wh.activo);
+      const nuevoEstado = !algunActivo;
       const actualizadas = workingHours.map(wh =>
         wh.diaSemana === diaNum ? { ...wh, activo: nuevoEstado } : wh
       );
       updateWorkingHours(actualizadas);
     } else {
       // Crear nueva franja para el día
+      const defaultLocId = locations.find(l => l.activa)?.id || locations[0]?.id;
       const nueva: WorkingHours = {
         id: 'wh_' + Math.random().toString(36).slice(2, 8),
         diaSemana: diaNum,
         horaInicio: '09:00',
         horaFin: '18:00',
         modalidad: 'presencial',
-        descansos: [{ inicio: '13:00', fin: '14:00' }],
+        descansos: [],
+        locationId: defaultLocId,
         activo: true,
       };
       updateWorkingHours([...workingHours, nueva]);
     }
   };
 
+  const handleAgregarFranja = (diaNum: number, franjaAnterior?: WorkingHours) => {
+    let inicio = '14:00';
+    let fin = '18:00';
+    if (franjaAnterior) {
+      if (franjaAnterior.horaFin <= '13:00') {
+        inicio = '14:00';
+        fin = '18:00';
+      } else if (franjaAnterior.horaFin < '18:00') {
+        inicio = franjaAnterior.horaFin;
+        fin = '20:00';
+      } else {
+        inicio = '08:00';
+        fin = '12:00';
+      }
+    }
+
+    const defaultLocId = franjaAnterior?.locationId || locations.find(l => l.activa)?.id || locations[0]?.id;
+
+    const nueva: WorkingHours = {
+      id: 'wh_' + Math.random().toString(36).slice(2, 8),
+      diaSemana: diaNum,
+      horaInicio: inicio,
+      horaFin: fin,
+      modalidad: franjaAnterior?.modalidad || 'presencial',
+      descansos: [],
+      locationId: defaultLocId,
+      activo: true,
+    };
+
+    updateWorkingHours([...workingHours, nueva]);
+  };
+
+  const handleEliminarFranja = (franjaId: string, diaNum: number) => {
+    const franjasDia = workingHours.filter(wh => wh.diaSemana === diaNum);
+    if (franjasDia.length <= 1) {
+      if (confirm('Esta es la única franja horaria configurada para este día. ¿Deseas eliminarla y pausar la atención este día?')) {
+        updateWorkingHours(workingHours.filter(wh => wh.id !== franjaId));
+      }
+    } else {
+      updateWorkingHours(workingHours.filter(wh => wh.id !== franjaId));
+    }
+  };
+
   const handleUpdateFranja = (id: string, campo: keyof WorkingHours, valor: any) => {
-    const actualizadas = workingHours.map(wh => (wh.id === id ? { ...wh, [campo]: valor } : wh));
+    const actualizadas = workingHours.map(wh => {
+      if (wh.id !== id) return wh;
+      const updated = { ...wh, [campo]: valor };
+      if (campo === 'modalidad' && (valor === 'presencial' || valor === 'ambas') && !updated.locationId) {
+        updated.locationId = locations.find(l => l.activa)?.id || locations[0]?.id;
+      }
+      return updated;
+    });
     updateWorkingHours(actualizadas);
   };
 
@@ -339,72 +392,147 @@ export const HorariosTab: React.FC = () => {
                 return (
                   <div
                     key={d.num}
-                    className={`p-4 rounded-xl border transition-all ${
+                    className={`p-4 rounded-2xl border transition-all ${
                       diaActivo ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50/70 border-slate-200'
                     }`}
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-slate-900 min-w-[100px]">
+                    <div className="flex flex-col gap-3">
+                      {/* Cabecera del día */}
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2.5 cursor-pointer font-bold text-sm text-slate-900 select-none">
                           <input
                             type="checkbox"
                             checked={diaActivo}
                             onChange={() => handleToggleDiaActivo(d.num)}
-                            className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                            className="w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
                           />
                           <span>{d.nombre}</span>
                         </label>
 
-                        {!diaActivo && (
-                          <span className="text-xs text-slate-400 font-medium">
+                        {diaActivo ? (
+                          <button
+                            type="button"
+                            onClick={() => handleAgregarFranja(d.num, franjasDia[franjasDia.length - 1])}
+                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors cursor-pointer"
+                            title={`Agregar otra franja de horario para el día ${d.nombre}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Agregar horario</span>
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-medium italic">
                             No atiende este día
                           </span>
                         )}
                       </div>
 
+                      {/* Filas de combo configs para este día */}
                       {diaActivo && (
-                        <div className="flex flex-wrap items-center gap-3">
-                          {franjasDia.map(franja => (
-                            <div key={franja.id} className="flex flex-wrap items-center gap-2 text-xs">
-                              <span className="text-slate-500 font-medium">Horario:</span>
-                              <input
-                                type="time"
-                                value={franja.horaInicio}
-                                onChange={e => handleUpdateFranja(franja.id, 'horaInicio', e.target.value)}
-                                className="border border-slate-200 rounded p-1 text-xs"
-                              />
-                              <span className="text-slate-400">a</span>
-                              <input
-                                type="time"
-                                value={franja.horaFin}
-                                onChange={e => handleUpdateFranja(franja.id, 'horaFin', e.target.value)}
-                                className="border border-slate-200 rounded p-1 text-xs"
-                              />
+                        <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                          {franjasDia.map(franja => {
+                            const requiereUbicacion =
+                              franja.modalidad === 'presencial' || franja.modalidad === 'ambas';
 
-                              <span className="text-slate-400">|</span>
-
-                              {/* Modalidad obligatoria por franja (D-18) */}
-                              <span className="text-slate-500 font-medium">Modalidad:</span>
-                              <select
-                                value={franja.modalidad}
-                                onChange={e =>
-                                  handleUpdateFranja(franja.id, 'modalidad', e.target.value as ModalidadFranja)
-                                }
-                                className="border border-slate-200 rounded p-1 text-xs bg-white font-semibold text-slate-800"
+                            return (
+                              <div
+                                key={franja.id}
+                                className="flex flex-wrap items-center gap-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 text-xs"
                               >
-                                <option value="presencial">Solo Presencial</option>
-                                <option value="videollamada">Solo Videollamada</option>
-                                <option value="ambas">Ambas modalidades</option>
-                              </select>
+                                {/* Horario: __ a __ */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                  <span className="text-slate-600 font-medium">Horario:</span>
+                                  <input
+                                    type="time"
+                                    value={franja.horaInicio}
+                                    onChange={e => handleUpdateFranja(franja.id, 'horaInicio', e.target.value)}
+                                    className="bg-white border border-slate-300 focus:border-sky-600 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800 outline-none tabular-nums shadow-2xs"
+                                  />
+                                  <span className="text-slate-400 font-medium">a</span>
+                                  <input
+                                    type="time"
+                                    value={franja.horaFin}
+                                    onChange={e => handleUpdateFranja(franja.id, 'horaFin', e.target.value)}
+                                    className="bg-white border border-slate-300 focus:border-sky-600 rounded-lg px-2 py-1 text-xs font-semibold text-slate-800 outline-none tabular-nums shadow-2xs"
+                                  />
+                                </div>
 
-                              {/* Descanso */}
-                              {franja.descansos.length > 0 && (
-                                <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                                  Almuerzo {franja.descansos[0].inicio} a {franja.descansos[0].fin}
-                                </span>
-                              )}
-                            </div>
-                          ))}
+                                <span className="text-slate-300 hidden md:inline">|</span>
+
+                                {/* Modalidad: ___ */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-slate-600 font-medium">Modalidad:</span>
+                                  <select
+                                    value={franja.modalidad}
+                                    onChange={e =>
+                                      handleUpdateFranja(franja.id, 'modalidad', e.target.value as ModalidadFranja)
+                                    }
+                                    className="bg-white border border-slate-300 focus:border-sky-600 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none cursor-pointer shadow-2xs"
+                                  >
+                                    <option value="presencial">Solo Presencial</option>
+                                    <option value="videollamada">Solo Videollamada</option>
+                                    <option value="ambas">Ambas modalidades</option>
+                                  </select>
+                                </div>
+
+                                {/* Desplegable de Ubicaciones / Direcciones si es Presencial o Ambas */}
+                                {requiereUbicacion && (
+                                  <>
+                                    <span className="text-slate-300 hidden lg:inline">|</span>
+                                    <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                                      <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                      <span className="text-slate-600 font-medium shrink-0">Ubicación:</span>
+                                      {locations.length > 0 ? (
+                                        <select
+                                          value={
+                                            franja.locationId ||
+                                            locations.find(l => l.activa)?.id ||
+                                            locations[0]?.id ||
+                                            ''
+                                          }
+                                          onChange={e => handleUpdateFranja(franja.id, 'locationId', e.target.value)}
+                                          className="w-full bg-white border border-slate-300 focus:border-sky-600 rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 outline-none cursor-pointer truncate shadow-2xs"
+                                        >
+                                          {locations.map(loc => (
+                                            <option key={loc.id} value={loc.id}>
+                                              {loc.nombre} {!loc.activa ? '(Pausada)' : ''} — {loc.direccion}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[11px] font-medium border border-amber-200">
+                                          Sin direcciones cargadas en Perfil
+                                        </span>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+
+                                {/* Botón '+' y '-' para cada combo config */}
+                                <div className="flex items-center gap-1 ml-auto shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAgregarFranja(d.num, franja)}
+                                    className="p-1.5 bg-white hover:bg-sky-50 text-slate-600 hover:text-sky-700 border border-slate-200 hover:border-sky-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                                    title="Agregar otra franja de horario para este día (+)"
+                                    aria-label="Agregar otra franja de horario"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEliminarFranja(franja.id, d.num)}
+                                    className="p-1.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                                    title="Quitar esta franja de horario (-)"
+                                    aria-label="Quitar esta franja de horario"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
