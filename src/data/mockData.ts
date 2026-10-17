@@ -90,6 +90,9 @@ export const INITIAL_PROFESSIONAL: Professional = {
   matriculaProvincial: '8.420',
   aliasCobro: 'martin.kine.mp',
   titularCobro: 'Martín Benítez',
+  cbu: '0070012300000045892147',
+  cuit: '20-33894210-9',
+  banco: 'Banco Galicia / Mercado Pago',
   zonaHoraria: 'America/Argentina/Buenos_Aires',
   agendaPausada: false,
   telefonoContactoPrivado: '+5491148899221', // Privado, no visible en portal
@@ -409,8 +412,16 @@ export function generarTurnosIniciales(baseDate: Date = new Date()): Appointment
       pacienteCobertura: 'Swiss Medical',
       pacientePlan: 'SMG 02',
       pacienteAfiliado: '8902144',
+      comprobantePago: {
+        url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80',
+        nombreArchivo: 'comprobante-mp-juan-manuel.jpg',
+        subidoEn: '2026-10-11T16:00:00Z',
+        montoCentavos: 2200000,
+        estado: 'aprobado',
+        notasRevision: 'Comprobante verificado y acreditado en cuenta bancaria.',
+      },
     },
-    // 3. Turno de HOY: 15:00 hs (Pendiente, sin pago - ideal para probar botón Confirmar WhatsApp y Check de pago)
+    // 3. Turno de HOY: 15:00 hs (Pendiente, sin pago - con comprobante digital por revisar)
     {
       id: 'app-03',
       professionalId: 'prof-martin-benitez',
@@ -434,6 +445,13 @@ export function generarTurnosIniciales(baseDate: Date = new Date()): Appointment
       pacienteCobertura: 'Galeno Plata',
       pacientePlan: 'Plata',
       pacienteAfiliado: '33019284',
+      comprobantePago: {
+        url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80',
+        nombreArchivo: 'transferencia-banco-galicia.jpg',
+        subidoEn: '2026-10-12T09:30:00Z',
+        montoCentavos: 3500000,
+        estado: 'pendiente_revision',
+      },
     },
     // 4. Turno de HOY: 17:30 hs (Videollamada, Pendiente, sin pago)
     {

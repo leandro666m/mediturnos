@@ -1,4 +1,3 @@
-import React, { useState } from 'react';
 import {
   Calendar,
   PlusCircle,
@@ -11,6 +10,7 @@ import {
   MapPin,
   Shield,
   Stethoscope,
+  TrendingUp,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { AgendaTab } from './tabs/AgendaTab';
@@ -18,13 +18,14 @@ import { CargarTurnoTab } from './tabs/CargarTurnoTab';
 import { PacientesTab } from './tabs/PacientesTab';
 import { HorariosTab } from './tabs/HorariosTab';
 import { DifusionTab } from './tabs/DifusionTab';
+import { MetricasTab } from './tabs/MetricasTab';
 import { PerfilModal } from './PerfilModal';
 import { PWAInstallButton } from '../common/PWAInstallButton';
 
 export const DoctorDashboard: React.FC = () => {
   const { professional, locations, appointments, exportarCsvTurnos, setActiveZone } = useApp();
 
-  const [tabActiva, setTabActiva] = useState<'agenda' | 'nuevo_turno' | 'pacientes' | 'horarios' | 'difusion'>('agenda');
+  const [tabActiva, setTabActiva] = useState<'agenda' | 'nuevo_turno' | 'pacientes' | 'horarios' | 'difusion' | 'metricas'>('agenda');
   const [pacientePreseleccionadoId, setPacientePreseleccionadoId] = useState<string | null>(null);
   const [modalPerfilAbierto, setModalPerfilAbierto] = useState(false);
 
@@ -175,7 +176,7 @@ export const DoctorDashboard: React.FC = () => {
 
             <button
               onClick={() => setTabActiva('difusion')}
-              className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+              className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap cursor-pointer ${
                 tabActiva === 'difusion'
                   ? 'border-sky-600 text-sky-700'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -183,6 +184,18 @@ export const DoctorDashboard: React.FC = () => {
             >
               <Share2 className="w-4 h-4" />
               <span>Difusión y QR</span>
+            </button>
+
+            <button
+              onClick={() => setTabActiva('metricas')}
+              className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                tabActiva === 'metricas'
+                  ? 'border-sky-600 text-sky-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>Métricas & Reportes</span>
             </button>
           </div>
 
@@ -209,6 +222,8 @@ export const DoctorDashboard: React.FC = () => {
         {tabActiva === 'horarios' && <HorariosTab />}
 
         {tabActiva === 'difusion' && <DifusionTab />}
+
+        {tabActiva === 'metricas' && <MetricasTab />}
       </main>
 
       {/* MODAL PERFIL */}

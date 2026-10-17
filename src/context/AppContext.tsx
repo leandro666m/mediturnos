@@ -73,6 +73,8 @@ interface AppContextType {
     motivo?: string;
     origen: 'portal' | 'dashboard';
     esSobreturno?: boolean;
+    estadoPago?: EstadoPago;
+    comprobantePago?: ComprobantePago;
   }) => { success: boolean; appointment?: Appointment; error?: string };
   changeAppointmentStatus: (
     id: string,
@@ -121,6 +123,25 @@ interface AppContextType {
     }>
   ) => { success: boolean; patient?: Patient; error?: string };
   exportarCsvTurnos: (turnosAExportar: Appointment[]) => void;
+  exportarGoogleSheetsData: () => void;
+  exportarGoogleDriveBackup: () => void;
+  exportarHistoriaClinicaPaciente: (patientId: string) => void;
+  findAppointmentByManageToken: (token: string) => Appointment | undefined;
+  cancelAppointmentByPatient: (token: string, motivo?: string) => { success: boolean; error?: string };
+  rescheduleAppointmentByPatient: (
+    token: string,
+    nuevoInicio: string,
+    nuevoFin: string
+  ) => { success: boolean; error?: string; newAppointment?: Appointment };
+  uploadPaymentProof: (
+    tokenOrId: string,
+    proof: { url: string; nombreArchivo?: string; montoCentavos: number }
+  ) => { success: boolean; error?: string };
+  reviewPaymentProof: (
+    appointmentId: string,
+    decision: 'aprobado' | 'rechazado',
+    notas?: string
+  ) => { success: boolean; error?: string };
   addCoverage: (nombre: string) => Coverage;
   updateCoverages: (coverages: Coverage[]) => void;
   toggleHolidayLaborable: (holidayId: string) => void;
@@ -518,7 +539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       inicio: params.inicio,
       fin: params.fin,
       estado: 'pendiente',
-      estadoPago: 'sin_pago',
+      estadoPago: params.estadoPago || 'sin_pago',
       precioCentavos: srv.precioCentavos,
       motivo: params.motivo?.trim(),
       origen: params.origen,
@@ -532,6 +553,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pacienteCobertura: coberturaNombre,
       pacientePlan: params.pacientePlan?.trim(),
       pacienteAfiliado: params.pacienteAfiliado?.trim(),
+      comprobantePago: params.comprobantePago,
     };
 
     setAppointments(prev => [nuevoTurno, ...prev]);
@@ -746,6 +768,389 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     URL.revokeObjectURL(url);
   };
 
+  const exportarGoogleSheetsData = () => {
+    const headers = [
+      'ID Turno',
+      'Fecha',
+      'Hora Inicio',
+      'Hora Fin',
+      'Paciente',
+      'DNI',
+      'Teléfono WhatsApp',
+      'Email',
+      'Servicio',
+      'Modalidad',
+      'Ubicación',
+      'Cobertura Médica',
+      'Plan / Afiliado',
+      'Estado Turno',
+      'Estado Pago',
+      'Arancel (ARS)',
+      'Comprobante Digital',
+      'Motivo Consulta',
+      'Origen',
+    ];
+
+    const rows = appointments.map(app => {
+      const srv = services.find(s => s.id === app.serviceId);
+      const loc = locations.find(l => l.id === app.locationId);
+      const fecha = app.inicio.slice(0, 10);
+      const horaIni = app.inicio.slice(11, 16);
+      const horaFin = app.fin.slice(11, 16);
+      const arancel = (app.precioCentavos / 100).toFixed(2);
+      const estadoComp = app.comprobantePago ? app.comprobantePago.estado : 'Sin comprobante';
+
+      return [
+        app.id,
+        fecha,
+        horaIni,
+        horaFin,
+        `"${app.pacienteNombre.replace(/"/g, '""')}"`,
+        app.pacienteDni,
+        `"${app.pacienteTelefono}"`,
+        app.pacienteEmail || '',
+        `"${(srv?.nombre || 'Consulta').replace(/"/g, '""')}"`,
+        app.modalidad,
+        `"${(loc?.nombre || 'Consultorio').replace(/"/g, '""')}"`,
+        `"${app.pacienteCobertura.replace(/"/g, '""')}"`,
+        `"${(app.pacientePlan || '') + (app.pacienteAfiliado ? ` - ${app.pacienteAfiliado}` : '')}"`,
+        app.estado,
+        app.estadoPago,
+        arancel,
+        estadoComp,
+        `"${(app.motivo || '').replace(/"/g, '""')}"`,
+        app.origen,
+      ].join('\t');
+    });
+
+    const tsvContent = '\uFEFF' + [headers.join('\t'), ...rows].join('\n');
+    const blob = new Blob([tsvContent], { type: 'text/tab-separated-values;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `MediTurnos-GoogleSheets-${professional.slug}-${new Date().toISOString().slice(0, 10)}.tsv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarGoogleDriveBackup = () => {
+    const backupData = {
+      meta: {
+        app: 'MediTurnos',
+        version: '2.0-Hito2',
+        fechaExportacion: new Date().toISOString(),
+        profesional: {
+          nombre: professional.nombre,
+          titulo: professional.titulo,
+          especialidad: professional.especialidad,
+          matriculaNacional: professional.matriculaNacional,
+          matriculaProvincial: professional.matriculaProvincial,
+          aliasCobro: professional.aliasCobro,
+          titularCobro: professional.titularCobro,
+          cbu: professional.cbu,
+        },
+      },
+      estadisticas: {
+        totalPacientes: patients.length,
+        totalFichasClinicas: notes.length,
+        totalTurnos: appointments.length,
+      },
+      pacientes: patients,
+      fichasClinicas: notes,
+      turnos: appointments,
+      servicios: services,
+      direcciones: locations,
+      configuracionHorarios: workingHours,
+      feriados: holidays,
+    };
+
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `MediTurnos-Backup-GoogleDrive-${professional.slug}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    // Guardar timestamp de último respaldo
+    const ahoraIso = new Date().toISOString();
+    try {
+      localStorage.setItem('mediturnos_last_drive_sync', ahoraIso);
+    } catch {
+      // Ignorar si localstorage no está disponible
+    }
+  };
+
+  const exportarHistoriaClinicaPaciente = (patientId: string) => {
+    const paciente = patients.find(p => p.id === patientId);
+    if (!paciente) return;
+
+    const notasPaciente = notes
+      .filter(n => n.patientId === patientId)
+      .sort((a, b) => new Date(b.actualizadoEn || b.creadoEn).getTime() - new Date(a.actualizadoEn || a.creadoEn).getTime());
+
+    const turnosPaciente = appointments
+      .filter(a => a.patientId === patientId || a.pacienteDni === paciente.dni)
+      .sort((a, b) => new Date(b.inicio).getTime() - new Date(a.inicio).getTime());
+
+    const cov = coverages.find(c => c.id === paciente.coverageId);
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Historia Clínica - ${paciente.nombre} (DNI ${paciente.dni})</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.5; padding: 32px; max-width: 800px; margin: auto; }
+    .header { border-bottom: 2px solid #0284c7; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .header h1 { margin: 0; font-size: 22px; color: #0369a1; }
+    .header p { margin: 2px 0; font-size: 13px; color: #64748b; }
+    .paciente-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; }
+    .nota-card { border-left: 3px solid #0284c7; padding-left: 16px; margin-bottom: 24px; }
+    .nota-fecha { font-size: 12px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin-bottom: 4px; }
+    .nota-titulo { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    .nota-cuerpo { font-size: 14px; color: #334155; white-space: pre-wrap; background: #fff; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px; }
+    .footer { margin-top: 40px; border-top: 1px solid #cbd5e1; pt-4; font-size: 11px; color: #94a3b8; text-align: center; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>${professional.titulo} ${professional.nombre}</h1>
+      <p><strong>${professional.especialidad}</strong></p>
+      <p>M.N. ${professional.matriculaNacional} · M.P. ${professional.matriculaProvincial}</p>
+    </div>
+    <div style="text-align: right;">
+      <p><strong>HISTORIA CLÍNICA</strong></p>
+      <p>Fecha de emisión: ${new Date().toLocaleDateString('es-AR')}</p>
+    </div>
+  </div>
+
+  <div class="paciente-card">
+    <div class="grid">
+      <div><strong>Paciente:</strong> ${paciente.nombre}</div>
+      <div><strong>DNI:</strong> ${paciente.dni}</div>
+      <div><strong>Teléfono:</strong> ${paciente.telefonoE164}</div>
+      <div><strong>Email:</strong> ${paciente.email || 'No registrado'}</div>
+      <div><strong>Cobertura:</strong> ${cov?.nombre || 'Particular'} ${paciente.plan ? `(${paciente.plan})` : ''}</div>
+      <div><strong>N° Afiliado:</strong> ${paciente.nroAfiliado || '-'}</div>
+    </div>
+    ${paciente.notasInternas ? `<div style="margin-top: 12px; font-size: 12px; color: #475569;"><strong>Observaciones generales:</strong> ${paciente.notasInternas}</div>` : ''}
+  </div>
+
+  <h2 style="font-size: 16px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Evoluciones y Notas Clínicas (${notasPaciente.length})</h2>
+
+  ${notasPaciente.length === 0 ? '<p style="font-size: 13px; color: #94a3b8; font-style: italic;">No registra notas clínicas cargadas.</p>' : ''}
+
+  ${notasPaciente.map(nota => `
+    <div class="nota-card">
+      <div class="nota-fecha">Fecha: ${new Date(nota.creadoEn).toLocaleDateString('es-AR')} ${new Date(nota.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="nota-titulo">${nota.titulo}</div>
+      <div class="nota-cuerpo">${nota.contenidoTexto || nota.contenidoJson || 'Sin contenido registrado'}</div>
+    </div>
+  `).join('')}
+
+  <h2 style="font-size: 16px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-top: 32px;">Historial de Turnos y Asistencias (${turnosPaciente.length})</h2>
+  <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px;">
+    <thead>
+      <tr style="background: #f1f5f9; text-align: left;">
+        <th style="padding: 6px 8px; border: 1px solid #e2e8f0;">Fecha</th>
+        <th style="padding: 6px 8px; border: 1px solid #e2e8f0;">Modalidad</th>
+        <th style="padding: 6px 8px; border: 1px solid #e2e8f0;">Estado</th>
+        <th style="padding: 6px 8px; border: 1px solid #e2e8f0;">Pago</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${turnosPaciente.map(t => `
+        <tr>
+          <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${new Date(t.inicio).toLocaleDateString('es-AR')} ${new Date(t.inicio).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
+          <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.modalidad}</td>
+          <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.estado}</td>
+          <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.estadoPago === 'pagado' ? 'Pagado (Arancel Completo)' : 'Sin Pago'}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <p>Documento médico confidencial generado a través de MediTurnos para respaldo en Google Drive.</p>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `HistoriaClinica-${paciente.dni}-${paciente.nombre.replace(/\s+/g, '_')}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const findAppointmentByManageToken = (token: string): Appointment | undefined => {
+    if (!token) return undefined;
+    return appointments.find(a => a.manageToken === token || a.id === token);
+  };
+
+  const cancelAppointmentByPatient = (
+    token: string,
+    motivo?: string
+  ): { success: boolean; error?: string } => {
+    const turno = appointments.find(a => a.manageToken === token || a.id === token);
+    if (!turno) {
+      return { success: false, error: 'Turno no encontrado.' };
+    }
+    if (turno.estado === 'cancelado') {
+      return { success: false, error: 'El turno ya se encuentra cancelado.' };
+    }
+    if (turno.estado === 'atendido') {
+      return { success: false, error: 'No es posible cancelar un turno que ya ha sido atendido.' };
+    }
+
+    const horasMin = professional.parametros.plazoCancelacionHoras || 4;
+    const inicioMs = new Date(turno.inicio).getTime();
+    const ahoraMs = Date.now();
+    const difHoras = (inicioMs - ahoraMs) / (1000 * 60 * 60);
+
+    if (difHoras < horasMin) {
+      return {
+        success: false,
+        error: `El plazo de cancelación online es de hasta ${horasMin} horas de anticipación. Por favor comunícate directamente con el consultorio por WhatsApp.`,
+      };
+    }
+
+    setAppointments(prev =>
+      prev.map(app => {
+        if (app.id === turno.id) {
+          return {
+            ...app,
+            estado: 'cancelado',
+            canceladoPor: 'paciente',
+            motivo: motivo || 'Cancelado por el paciente desde el portal',
+          };
+        }
+        return app;
+      })
+    );
+
+    return { success: true };
+  };
+
+  const rescheduleAppointmentByPatient = (
+    token: string,
+    nuevoInicio: string,
+    nuevoFin: string
+  ): { success: boolean; error?: string; newAppointment?: Appointment } => {
+    const turnoOriginal = appointments.find(a => a.manageToken === token || a.id === token);
+    if (!turnoOriginal) {
+      return { success: false, error: 'Turno no encontrado.' };
+    }
+    if (turnoOriginal.estado === 'cancelado' || turnoOriginal.estado === 'atendido') {
+      return { success: false, error: 'No se puede reprogramar un turno cancelado o ya atendido.' };
+    }
+
+    const nuevoId = 'app_' + Math.random().toString(36).slice(2, 10);
+    const nuevoTurno: Appointment = {
+      ...turnoOriginal,
+      id: nuevoId,
+      inicio: nuevoInicio,
+      fin: nuevoFin,
+      estado: 'pendiente',
+      reprogramadoDe: turnoOriginal.id,
+      creadoEn: new Date().toISOString(),
+    };
+
+    setAppointments(prev =>
+      prev.map(app => {
+        if (app.id === turnoOriginal.id) {
+          return {
+            ...app,
+            estado: 'reprogramado' as EstadoTurno,
+            reprogramadoA: nuevoId,
+          };
+        }
+        return app;
+      }).concat(nuevoTurno)
+    );
+
+    return { success: true, newAppointment: nuevoTurno };
+  };
+
+  const uploadPaymentProof = (
+    tokenOrId: string,
+    proof: { url: string; nombreArchivo?: string; montoCentavos: number }
+  ): { success: boolean; error?: string } => {
+    const target = appointments.find(a => a.manageToken === tokenOrId || a.id === tokenOrId);
+    if (!target) {
+      return { success: false, error: 'Turno no encontrado.' };
+    }
+
+    const comprobante: ComprobantePago = {
+      url: proof.url,
+      nombreArchivo: proof.nombreArchivo || 'comprobante-transferencia.jpg',
+      subidoEn: new Date().toISOString(),
+      montoCentavos: proof.montoCentavos || target.precioCentavos,
+      estado: 'pendiente_revision',
+    };
+
+    setAppointments(prev =>
+      prev.map(app => {
+        if (app.id === target.id) {
+          return {
+            ...app,
+            comprobantePago: comprobante,
+          };
+        }
+        return app;
+      })
+    );
+
+    return { success: true };
+  };
+
+  const reviewPaymentProof = (
+    appointmentId: string,
+    decision: 'aprobado' | 'rechazado',
+    notas?: string
+  ): { success: boolean; error?: string } => {
+    const target = appointments.find(a => a.id === appointmentId);
+    if (!target || !target.comprobantePago) {
+      return { success: false, error: 'Turno o comprobante no encontrado.' };
+    }
+
+    setAppointments(prev =>
+      prev.map(app => {
+        if (app.id === appointmentId && app.comprobantePago) {
+          return {
+            ...app,
+            estadoPago: decision === 'aprobado' ? 'pagado' : 'sin_pago',
+            comprobantePago: {
+              ...app.comprobantePago,
+              estado: decision,
+              notasRevision:
+                notas ||
+                (decision === 'aprobado'
+                  ? 'Comprobante verificado y aprobado por el profesional.'
+                  : 'Comprobante no válido o ilegible.'),
+            },
+          };
+        }
+        return app;
+      })
+    );
+
+    return { success: true };
+  };
+
   const addCoverage = (nombre: string): Coverage => {
     const trimmed = nombre.trim();
     const id = 'cov_' + Math.random().toString(36).slice(2, 9);
@@ -853,6 +1258,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPatient,
         updatePatient,
         exportarCsvTurnos,
+        exportarGoogleSheetsData,
+        exportarGoogleDriveBackup,
+        exportarHistoriaClinicaPaciente,
+        findAppointmentByManageToken,
+        cancelAppointmentByPatient,
+        rescheduleAppointmentByPatient,
+        uploadPaymentProof,
+        reviewPaymentProof,
         addCoverage,
         updateCoverages,
         toggleHolidayLaborable,

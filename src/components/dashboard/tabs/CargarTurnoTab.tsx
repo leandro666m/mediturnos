@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Plus,
   X,
+  CreditCard,
+  UploadCloud,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Modalidad } from '../../../types';
@@ -65,6 +67,10 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
   const [plan, setPlan] = useState('');
   const [nroAfiliado, setNroAfiliado] = useState('');
   const [motivo, setMotivo] = useState('');
+
+  // Bloque 4: Cobro de Arancel Completo (Hito 2)
+  const [marcarPagadoCompleto, setMarcarPagadoCompleto] = useState(false);
+  const [previewComprobanteManual, setPreviewComprobanteManual] = useState<string | null>(null);
 
   // Modal para Agregar Obra Social / Prepaga
   const [mostrarModalAgregarCobertura, setMostrarModalAgregarCobertura] = useState(false);
@@ -186,6 +192,17 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
       motivo,
       origen: 'dashboard',
       esSobreturno,
+      estadoPago: marcarPagadoCompleto ? 'pagado' : 'sin_pago',
+      comprobantePago: previewComprobanteManual
+        ? {
+            url: previewComprobanteManual,
+            nombreArchivo: 'comprobante-arancel-completo.jpg',
+            subidoEn: new Date().toISOString(),
+            montoCentavos: servicioSeleccionado.precioCentavos,
+            estado: 'aprobado',
+            notasRevision: 'Comprobante acreditado en carga manual por el profesional.',
+          }
+        : undefined,
     });
 
     if (res.success) {
@@ -642,6 +659,82 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                 className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none"
               />
             </div>
+          </div>
+        </div>
+
+        {/* BLOQUE 4: COBRO DEL ARANCEL COMPLETO (HITO 2) */}
+        <div className="p-4 bg-emerald-50/60 border border-emerald-200/90 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-emerald-600" />
+              <span>4. Cobro del Arancel Completo (100%)</span>
+            </h3>
+            <span className="text-xs font-black text-emerald-800 tabular-nums bg-emerald-100 px-2.5 py-0.5 rounded-full">
+              {formatearMoneda(servicioSeleccionado ? servicioSeleccionado.precioCentavos : 0)}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <label className="flex items-center gap-2.5 text-xs text-slate-800 font-semibold cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={marcarPagadoCompleto}
+                onChange={e => setMarcarPagadoCompleto(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span>Marcar consulta como abonada en el acto (Arancel Completo percibido)</span>
+            </label>
+
+            {marcarPagadoCompleto && (
+              <div className="pt-2 border-t border-emerald-200/60 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 text-[11px]">
+                    Comprobante digital (opcional para auditoría o archivo):
+                  </span>
+                  <input
+                    type="file"
+                    id="archivo-comprobante-manual-input"
+                    accept="image/*,.pdf"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          setPreviewComprobanteManual(ev.target?.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="archivo-comprobante-manual-input"
+                    className="px-2.5 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>{previewComprobanteManual ? 'Cambiar archivo' : 'Adjuntar ticket'}</span>
+                  </label>
+                </div>
+
+                {previewComprobanteManual && (
+                  <div className="flex items-center gap-2 p-2 bg-white rounded-lg border border-emerald-200">
+                    <img
+                      src={previewComprobanteManual}
+                      alt="Preview comprobante"
+                      className="w-10 h-10 object-cover rounded border border-slate-200"
+                    />
+                    <span className="text-[11px] text-emerald-800 font-medium">Comprobante adjuntado listo para archivar</span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewComprobanteManual(null)}
+                      className="ml-auto text-slate-400 hover:text-slate-600 p-1 text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

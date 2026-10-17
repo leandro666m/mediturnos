@@ -56,6 +56,8 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
     addPatient,
     updatePatient,
     addCoverage,
+    exportarGoogleDriveBackup,
+    exportarHistoriaClinicaPaciente,
   } = useApp();
 
   const [busqueda, setBusqueda] = useState('');
@@ -483,6 +485,15 @@ Próximo control: `;
                     <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
                       {pacienteSeleccionado.plan || 'Particular'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => exportarHistoriaClinicaPaciente(pacienteSeleccionado.id)}
+                      className="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                      title="Descargar e imprimir historia clínica completa del paciente"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Historia Clínica</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleAbrirEditarPaciente(pacienteSeleccionado)}
