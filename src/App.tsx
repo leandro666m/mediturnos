@@ -25,7 +25,7 @@ function MediTurnosApp() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900 selection:bg-sky-500 selection:text-white">
-      <HeaderNav />
+      {/* <HeaderNav /> */}
       <div className="flex-1">
         {activeZone === 'dashboard' ? <DoctorDashboard /> : <PatientPortal />}
       </div>

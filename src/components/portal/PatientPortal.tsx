@@ -272,7 +272,7 @@ export const PatientPortal: React.FC = () => {
     <div className="min-h-screen bg-slate-50 py-6 px-3 sm:px-6 flex flex-col items-center">
       
       {/* Botón flotante para alternar vista móvil y botón PWA */}
-      <div className="w-full max-w-2xl mb-4 flex justify-between items-center text-xs text-slate-500">
+{/*       <div className="w-full max-w-2xl mb-4 flex justify-between items-center text-xs text-slate-500">
         <div className="flex items-center gap-1.5 font-medium">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           <span>Portal del Paciente en vivo (PWA)</span>
@@ -297,7 +297,7 @@ export const PatientPortal: React.FC = () => {
           </button>
         </div>
       </div>
-
+ */}
       {/* Contenedor Principal (simulador de móvil o contenedor responsivo) */}
       <div
         className={`w-full bg-white transition-all shadow-md rounded-2xl border border-slate-200/80 overflow-hidden ${
