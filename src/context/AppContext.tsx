@@ -6,6 +6,7 @@ import {
   Coverage,
   EstadoPago,
   EstadoTurno,
+  FontSizePreference,
   Holiday,
   Location,
   MessageTemplate,
@@ -82,11 +83,15 @@ interface AppContextType {
   rescheduleAppointment: (
     appointmentId: string,
     nuevoInicio: string,
-    nuevoFin: string
+    nuevoFin: string,
+    esSobreturno?: boolean
   ) => { success: boolean; newAppointment?: Appointment; error?: string };
   saveConsultationNote: (note: Partial<ConsultationNote> & { patientId: string }) => ConsultationNote;
   deleteConsultationNote: (noteId: string) => void;
   updateProfessional: (data: Partial<Professional>) => void;
+  updateLocations: (locations: Location[]) => void;
+  tamanoTexto: FontSizePreference;
+  setTamanoTexto: (size: FontSizePreference) => void;
   updateWorkingHours: (hours: WorkingHours[]) => void;
   updateServices: (services: Service[]) => void;
   updateTemplates: (templates: MessageTemplate[]) => void;
@@ -135,11 +140,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [professional, setProfessional] = useState<Professional>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_prof`);
-      return saved ? JSON.parse(saved) : INITIAL_PROFESSIONAL;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (!parsed.tamanoTexto) parsed.tamanoTexto = 'predeterminado';
+        return parsed;
+      }
+      return INITIAL_PROFESSIONAL;
     } catch {
       return INITIAL_PROFESSIONAL;
     }
   });
+
+  // Aplicar escala tipográfica global de forma reactiva en el Dashboard del profesional
+  useEffect(() => {
+    if (activeZone === 'dashboard') {
+      const size = professional.tamanoTexto || 'predeterminado';
+      document.documentElement.setAttribute('data-text-size', size);
+    }
+  }, [professional.tamanoTexto, activeZone]);
 
   const [locations, setLocations] = useState<Location[]>(() => {
     try {
@@ -567,7 +585,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rescheduleAppointment = (
     appointmentId: string,
     nuevoInicio: string,
-    nuevoFin: string
+    nuevoFin: string,
+    esSobreturno?: boolean
   ): { success: boolean; newAppointment?: Appointment; error?: string } => {
     const turnoOriginal = appointments.find(a => a.id === appointmentId);
     if (!turnoOriginal) {
@@ -582,6 +601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       inicio: nuevoInicio,
       fin: nuevoFin,
       estado: 'pendiente',
+      esSobreturno: esSobreturno !== undefined ? esSobreturno : turnoOriginal.esSobreturno,
       reprogramadoDe: turnoOriginal.id,
       creadoEn: new Date().toISOString(),
     };
@@ -648,6 +668,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateProfessional = (data: Partial<Professional>) => {
     setProfessional(prev => ({ ...prev, ...data }));
+  };
+
+  const setTamanoTexto = (size: FontSizePreference) => {
+    updateProfessional({ tamanoTexto: size });
   };
 
   const updateWorkingHours = (hours: WorkingHours[]) => {
@@ -818,6 +842,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveConsultationNote,
         deleteConsultationNote,
         updateProfessional,
+        updateLocations: setLocations,
+        tamanoTexto: professional.tamanoTexto || 'predeterminado',
+        setTamanoTexto,
         updateWorkingHours,
         updateServices,
         updateTemplates,

@@ -21,6 +21,7 @@ import {
   X,
   Share,
   PlusSquare,
+  ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { usePWAInstall } from '../../modules/usePWAInstall';
@@ -38,7 +39,7 @@ import {
   resolverPlantillaMensaje,
 } from '../../modules/messaging';
 import { generarArchivoIcs } from '../../modules/calendar';
-import { Appointment, Modalidad, Service } from '../../types';
+import { Appointment, HuecoDisponibilidad, Modalidad, Service } from '../../types';
 
 export const PatientPortal: React.FC = () => {
   const {
@@ -62,11 +63,7 @@ export const PatientPortal: React.FC = () => {
   const [paso, setPaso] = useState<1 | 2 | 3 | 4>(1);
   const [servicioSeleccionado, setServicioSeleccionado] = useState<Service | null>(null);
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string>('');
-  const [huecoSeleccionado, setHuecoSeleccionado] = useState<{
-    inicio: string;
-    fin: string;
-    modalidades: Modalidad[];
-  } | null>(null);
+  const [huecoSeleccionado, setHuecoSeleccionado] = useState<HuecoDisponibilidad | null>(null);
   const [modalidadElegida, setModalidadElegida] = useState<Modalidad>('presencial');
   const [direccionElegidaId, setDireccionElegidaId] = useState<string>(locations[0]?.id || '');
   const [holdActivoId, setHoldActivoId] = useState<string | null>(null);
@@ -94,6 +91,24 @@ export const PatientPortal: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [mostrarAlertaInstalar, setMostrarAlertaInstalar] = useState(false);
   const [mostrarGuiaPWA, setMostrarGuiaPWA] = useState(false);
+
+  // Para el Portal del paciente: tamaño 'Estandar' por defecto, y botón en la esquina de 'aA' para pasar a 'Grande'
+  const [tamanoFuentePaciente, setTamanoFuentePaciente] = useState<'estandar' | 'grande'>('estandar');
+
+  useEffect(() => {
+    // Al abrir el portal del paciente siempre inicia en 'predeterminado' (Estándar), o 'grande' si el paciente presiona aA
+    const size = tamanoFuentePaciente === 'grande' ? 'grande' : 'predeterminado';
+    document.documentElement.setAttribute('data-text-size', size);
+
+    return () => {
+      // Al salir del portal del paciente, restaurar el tamaño elegido por el profesional en su dashboard
+      document.documentElement.setAttribute('data-text-size', professional.tamanoTexto || 'predeterminado');
+    };
+  }, [tamanoFuentePaciente, professional.tamanoTexto]);
+
+  const toggleTamanoFuentePaciente = () => {
+    setTamanoFuentePaciente(prev => (prev === 'grande' ? 'estandar' : 'grande'));
+  };
 
   // Seleccionar primer servicio por defecto si no hay
   useEffect(() => {
@@ -246,7 +261,8 @@ export const PatientPortal: React.FC = () => {
       turnoConfirmado,
       professional,
       servicioSeleccionado || undefined,
-      dir?.direccion
+      dir?.direccion,
+      dir?.mapsUrl
     );
 
     return resolverPlantillaMensaje(
@@ -278,6 +294,27 @@ export const PatientPortal: React.FC = () => {
           <span>Portal del Paciente en vivo (PWA)</span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Botón aA para alternar entre tamaño Estándar y Grande */}
+          <button
+            type="button"
+            onClick={toggleTamanoFuentePaciente}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold transition-all cursor-pointer shadow-2xs ${
+              tamanoFuentePaciente === 'grande'
+                ? 'bg-sky-600 border-sky-600 text-white'
+                : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+            }`}
+            title={
+              tamanoFuentePaciente === 'grande'
+                ? 'Tamaño actual: Grande. Clic para volver a Estándar'
+                : 'Aumentar tamaño de letra a Grande (aA)'
+            }
+          >
+            <span className="text-xs font-black tracking-tight">aA</span>
+            <span className="text-[11px] font-medium hidden sm:inline">
+              {tamanoFuentePaciente === 'grande' ? 'Grande' : 'Estándar'}
+            </span>
+          </button>
+
           {!isInstalled && (
             <button
               type="button"
@@ -324,7 +361,26 @@ export const PatientPortal: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+              {/* Botón en la esquina de 'aA' para pasar al tamaño 'Grande' */}
+              <button
+                type="button"
+                onClick={toggleTamanoFuentePaciente}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all cursor-pointer shadow-xs ${
+                  tamanoFuentePaciente === 'grande'
+                    ? 'bg-white text-sky-900 border-white font-black scale-105'
+                    : 'bg-white/10 hover:bg-white/20 active:scale-95 text-white border-white/20 font-bold'
+                }`}
+                title={
+                  tamanoFuentePaciente === 'grande'
+                    ? 'Texto Grande activado. Tocar para volver a Estándar'
+                    : 'Tocar para agrandar tamaño de texto (aA)'
+                }
+                aria-label="Alternar tamaño de texto entre Estándar y Grande"
+              >
+                <span className="text-xs sm:text-sm font-black tracking-tighter">aA</span>
+              </button>
+
               {/* Botón de instalar app - SOLO con el ícono (con confirmación al tocar) */}
               {!isInstalled && (
                 <button
@@ -354,11 +410,27 @@ export const PatientPortal: React.FC = () => {
           </div>
 
           {/* Direcciones de atención */}
-          <div className="mt-4 pt-3 border-t border-sky-700/60 flex flex-col gap-1.5 text-xs text-sky-100">
+          <div className="mt-4 pt-3 border-t border-sky-700/60 flex flex-col gap-2 text-xs text-sky-100">
             {locations.filter(l => l.activa).map(loc => (
-              <div key={loc.id} className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-sky-300 shrink-0" />
-                <span className="truncate">{loc.direccion}</span>
+              <div key={loc.id} className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                  <span className="truncate">
+                    <strong className="text-white font-semibold">{loc.nombre}:</strong> {loc.direccion}
+                  </span>
+                </div>
+                {loc.mapsUrl && (
+                  <a
+                    href={loc.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 hover:text-white underline shrink-0 transition-colors"
+                    title={`Abrir ${loc.nombre} en Google Maps`}
+                  >
+                    <span>Ver en Google Maps</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
               </div>
             ))}
           </div>
@@ -610,6 +682,9 @@ export const PatientPortal: React.FC = () => {
                                     if (h.modalidades.length === 1) {
                                       setModalidadElegida(h.modalidades[0]);
                                     }
+                                    if (h.locationIds && h.locationIds.length > 0) {
+                                      setDireccionElegidaId(h.locationIds[0]);
+                                    }
                                   }}
                                   className={`py-2 px-2.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 ${
                                     isSlotSelected
@@ -659,6 +734,9 @@ export const PatientPortal: React.FC = () => {
                                     setHuecoSeleccionado(h);
                                     if (h.modalidades.length === 1) {
                                       setModalidadElegida(h.modalidades[0]);
+                                    }
+                                    if (h.locationIds && h.locationIds.length > 0) {
+                                      setDireccionElegidaId(h.locationIds[0]);
                                     }
                                   }}
                                   className={`py-2 px-2.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 ${
@@ -727,23 +805,73 @@ export const PatientPortal: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Elección de Consultorio si es presencial y hay más de una ubicación */}
-                      {modalidadElegida === 'presencial' && locations.filter(l => l.activa).length > 1 && (
-                        <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                          <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                            Lugar de atención:
-                          </label>
-                          <select
-                            value={direccionElegidaId}
-                            onChange={e => setDireccionElegidaId(e.target.value)}
-                            className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800"
-                          >
-                            {locations.filter(l => l.activa).map(loc => (
-                              <option key={loc.id} value={loc.id}>
-                                {loc.nombre} — {loc.direccion}
-                              </option>
-                            ))}
-                          </select>
+                      {/* Información y Confirmación del Lugar de Atención Presencial */}
+                      {modalidadElegida === 'presencial' && (
+                        <div className="mt-3.5 p-3.5 bg-sky-50/70 rounded-xl border border-sky-200 text-xs">
+                          <div className="flex items-start gap-2.5">
+                            <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-[11px] font-bold text-sky-800 uppercase tracking-wide block mb-1">
+                                Consultorio de atención presencial:
+                              </span>
+                              {huecoSeleccionado?.locationIds && huecoSeleccionado.locationIds.length === 1 ? (
+                                <div>
+                                  <span className="font-bold text-slate-800 block text-xs">
+                                    {locations.find(l => l.id === direccionElegidaId)?.nombre || 'Consultorio'}
+                                  </span>
+                                  <span className="text-slate-600 block text-xs mt-0.5">
+                                    {locations.find(l => l.id === direccionElegidaId)?.direccion}
+                                  </span>
+                                  {locations.find(l => l.id === direccionElegidaId)?.indicaciones && (
+                                    <span className="text-[11px] text-slate-500 italic block mt-1">
+                                      Indicaciones: {locations.find(l => l.id === direccionElegidaId)?.indicaciones}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : locations.filter(l => l.activa).length > 1 ? (
+                                <select
+                                  value={direccionElegidaId}
+                                  onChange={e => setDireccionElegidaId(e.target.value)}
+                                  className="w-full text-xs bg-white border border-slate-300 focus:border-sky-600 rounded-lg p-2 text-slate-800 font-medium shadow-2xs"
+                                >
+                                  {locations.filter(l => l.activa).map(loc => (
+                                    <option key={loc.id} value={loc.id}>
+                                      {loc.nombre} — {loc.direccion}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div>
+                                  <span className="font-bold text-slate-800 block text-xs">
+                                    {locations[0]?.nombre || 'Consultorio'}
+                                  </span>
+                                  <span className="text-slate-600 block text-xs mt-0.5">
+                                    {locations[0]?.direccion}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Enlace a Google Maps para la ubicación seleccionada */}
+                              {(() => {
+                                const locSel =
+                                  locations.find(l => l.id === direccionElegidaId) || locations[0];
+                                if (!locSel?.mapsUrl) return null;
+                                return (
+                                  <div className="mt-2 pt-2 border-t border-sky-100 flex items-center">
+                                    <a
+                                      href={locSel.mapsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                      <span>Ver ubicación en Google Maps</span>
+                                    </a>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -822,6 +950,33 @@ export const PatientPortal: React.FC = () => {
                         {modalidadElegida === 'presencial' ? 'Presencial' : 'Videollamada por WhatsApp'}
                       </span>
                     </div>
+                    {modalidadElegida === 'presencial' && (() => {
+                      const locActual =
+                        locations.find(l => l.id === direccionElegidaId) || locations[0];
+                      return (
+                        <div className="flex flex-col gap-1 pt-0.5">
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500 shrink-0">Consultorio:</span>
+                            <span className="font-semibold text-slate-800 text-right">
+                              {locActual ? `${locActual.nombre} · ${locActual.direccion}` : 'Consultorio'}
+                            </span>
+                          </div>
+                          {locActual?.mapsUrl && (
+                            <div className="flex justify-end">
+                              <a
+                                href={locActual.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                <span>Ver en Google Maps</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {servicioSeleccionado?.mostrarPrecio && (
                       <div className="flex justify-between pt-1 border-t border-slate-200">
                         <span className="text-slate-500">Valor consulta:</span>
@@ -1058,14 +1213,38 @@ export const PatientPortal: React.FC = () => {
                       </span>
                     </div>
 
-                    {turnoConfirmado.modalidad === 'presencial' && (
-                      <div className="flex justify-between pt-1">
-                        <span className="text-slate-500">Lugar:</span>
-                        <span className="font-semibold text-slate-800 text-right">
-                          {locations.find(l => l.id === turnoConfirmado.locationId)?.direccion || 'Consultorio'}
-                        </span>
-                      </div>
-                    )}
+                    {turnoConfirmado.modalidad === 'presencial' && (() => {
+                      const locActual =
+                        locations.find(l => l.id === turnoConfirmado.locationId) || locations[0];
+                      return (
+                        <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-100">
+                          <div className="flex justify-between items-start">
+                            <span className="text-slate-500">Lugar:</span>
+                            <span className="font-semibold text-slate-800 text-right">
+                              {locActual ? `${locActual.nombre} · ${locActual.direccion}` : 'Consultorio'}
+                            </span>
+                          </div>
+                          {locActual?.indicaciones && (
+                            <div className="text-[11px] text-slate-500 text-right italic">
+                              Indicaciones: {locActual.indicaciones}
+                            </div>
+                          )}
+                          {locActual?.mapsUrl && (
+                            <div className="flex justify-end pt-1">
+                              <a
+                                href={locActual.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                <span>Abrir ubicación en Google Maps</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Acciones de WhatsApp y Calendario */}

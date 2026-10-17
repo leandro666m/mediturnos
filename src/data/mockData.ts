@@ -24,6 +24,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     direccion: 'Av. Cabildo 2450, Piso 4 Of. B, Belgrano, CABA',
     activa: true,
     indicaciones: 'Timbre 4B. A 100m de Estación Juramento Subte D.',
+    mapsUrl: 'https://maps.google.com/?q=Av.+Cabildo+2450,+Belgrano,+CABA',
   },
   {
     id: 'loc-olivos',
@@ -31,6 +32,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     direccion: 'Av. Maipú 1820, Consultorios Médicos Olivos, Vicente López, Bs. As.',
     activa: true,
     indicaciones: 'Estacionamiento sobre calle Corrientes.',
+    mapsUrl: 'https://maps.google.com/?q=Av.+Maipú+1820,+Vicente+López',
   },
 ];
 
@@ -92,6 +94,7 @@ export const INITIAL_PROFESSIONAL: Professional = {
   agendaPausada: false,
   telefonoContactoPrivado: '+5491148899221', // Privado, no visible en portal
   fotoPerfil: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&auto=format&fit=crop&q=80',
+  tamanoTexto: 'predeterminado',
   parametros: {
     grillaMin: 30,
     anticipacionMinHoras: 2,
@@ -133,18 +136,28 @@ export const INITIAL_WORKING_HOURS: WorkingHours[] = [
     horaInicio: '14:00',
     horaFin: '19:00',
     modalidad: 'ambas',
-    descansos: [{ inicio: '16:30', fin: '17:00' }],
+    descansos: [],
     locationId: 'loc-belgrano',
     activo: true,
   },
   // Martes (2)
   {
-    id: 'wh-mar-todo',
+    id: 'wh-mar-manana',
     diaSemana: 2,
     horaInicio: '09:00',
+    horaFin: '13:00',
+    modalidad: 'presencial',
+    descansos: [],
+    locationId: 'loc-olivos',
+    activo: true,
+  },
+  {
+    id: 'wh-mar-tarde',
+    diaSemana: 2,
+    horaInicio: '14:00',
     horaFin: '18:00',
     modalidad: 'presencial',
-    descansos: [{ inicio: '13:00', fin: '14:00' }],
+    descansos: [],
     locationId: 'loc-olivos',
     activo: true,
   },
@@ -171,12 +184,22 @@ export const INITIAL_WORKING_HOURS: WorkingHours[] = [
   },
   // Jueves (4)
   {
-    id: 'wh-jue-todo',
+    id: 'wh-jue-manana',
     diaSemana: 4,
     horaInicio: '09:00',
+    horaFin: '13:00',
+    modalidad: 'presencial',
+    descansos: [],
+    locationId: 'loc-olivos',
+    activo: true,
+  },
+  {
+    id: 'wh-jue-tarde',
+    diaSemana: 4,
+    horaInicio: '14:00',
     horaFin: '18:00',
     modalidad: 'presencial',
-    descansos: [{ inicio: '13:00', fin: '14:00' }],
+    descansos: [],
     locationId: 'loc-olivos',
     activo: true,
   },
