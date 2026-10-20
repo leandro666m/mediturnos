@@ -357,22 +357,6 @@ export const PatientPortal: React.FC = () => {
             </button>
           )}
 
-          {/* Botón Consultar mi turno / Subir comprobante */}
-          <button
-            type="button"
-            onClick={() => {
-              setModalConsultarTurno(true);
-              setErrorConsulta('');
-              setTurnoConsultado(null);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 hover:border-sky-300 hover:bg-sky-50 text-sky-800 rounded-lg text-xs font-semibold shadow-2xs transition-all cursor-pointer"
-            title="Consultar turno reservado o subir comprobante de pago"
-          >
-            <Search className="w-3.5 h-3.5 text-sky-600" />
-            <span className="hidden sm:inline">Consultar mi turno</span>
-            <span className="sm:hidden">Mi turno</span>
-          </button>
-
           <button
             onClick={() => setModoMarcoMovil(!modoMarcoMovil)}
             className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-medium shadow-2xs cursor-pointer"
@@ -481,6 +465,26 @@ export const PatientPortal: React.FC = () => {
                 )}
               </div>
             ))}
+          </div>
+
+          {/* Fila de acción rápida: Consultar turno reservado o subir comprobante */}
+          <div className="mt-3.5 pt-3 border-t border-sky-700/60 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-xs text-sky-100/90 font-medium">
+              ¿Ya tenés un turno reservado?
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setModalConsultarTurno(true);
+                setErrorConsulta('');
+                setTurnoConsultado(null);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/25 hover:border-white/40 text-xs font-semibold transition-all cursor-pointer shadow-xs"
+              title="Consultar turno reservado o subir comprobante de pago"
+            >
+              <Search className="w-3.5 h-3.5 text-sky-200" />
+              <span>Consultar mi turno</span>
+            </button>
           </div>
 
           {/* Estado de Agenda Pausada (Regla 1.4) */}
@@ -1220,7 +1224,7 @@ export const PatientPortal: React.FC = () => {
               {/* ========================================================
                   PASO 4: CONFIRMACIÓN EXITOSA
                  ======================================================== */}
-              {paso === 4 && turnoConfirmado && (
+              {paso === 4 && turnoConfirmado && turnoConfirmadoActual && (
                 <div className="text-center py-2">
                   <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-xs">
                     <CheckCircle2 className="w-8 h-8" />
@@ -1870,8 +1874,45 @@ export const PatientPortal: React.FC = () => {
                         )}
                       </div>
                     ) : (
-                      <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-                        No registrás comprobante cargado. Podés transferir con alias <strong>{professional.aliasCobro}</strong> y subir tu ticket abajo.
+                      <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-600 space-y-2">
+                        <p>
+                          No registrás comprobante cargado. Podés transferir con alias <strong>{professional.aliasCobro}</strong> y subir tu comprobante acá:
+                        </p>
+                        <div className="border border-dashed border-emerald-300 rounded-xl p-3 text-center bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
+                          <input
+                            type="file"
+                            id="consulta-modal-comprobante"
+                            accept="image/*,.pdf"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = ev => {
+                                  const url = ev.target?.result as string;
+                                  uploadPaymentProof(turnoConsultadoActual.id, {
+                                    url,
+                                    nombreArchivo: file.name,
+                                    montoCentavos: turnoConsultadoActual.precioCentavos,
+                                  });
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <label
+                            htmlFor="consulta-modal-comprobante"
+                            className="cursor-pointer flex flex-col items-center justify-center gap-1"
+                          >
+                            <UploadCloud className="w-5 h-5 text-emerald-600" />
+                            <span className="font-bold text-emerald-800 text-xs">
+                              Adjuntar comprobante de transferencia
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              Foto o captura de pantalla (JPG, PNG o PDF)
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     )}
                   </div>

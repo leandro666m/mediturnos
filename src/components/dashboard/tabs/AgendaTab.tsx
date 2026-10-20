@@ -1,3 +1,4 @@
+import React, { useState, useMemo } from 'react';
 import {
   Calendar,
   Clock,
@@ -417,7 +418,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
             </button>
           </div>
         ) : (
-          turnosFiltrados.map(turno => {
+          turnosFiltrados.map((turno: Appointment) => {
             const srv = services.find(s => s.id === turno.serviceId);
             const loc = locations.find(l => l.id === turno.locationId);
             const estaPagado = turno.estadoPago === 'pagado';
@@ -807,7 +808,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                   {disponibilidadReprog.slots.length > 0 ? (
                     <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-h-44 overflow-y-auto">
                       <div className="flex flex-wrap gap-1.5">
-                        {disponibilidadReprog.slots.map(s => {
+                        {disponibilidadReprog.slots.map((s: { hora: string; inicio: string; fin: string }) => {
                           const isSelected = nuevaHora === s.hora;
                           return (
                             <button

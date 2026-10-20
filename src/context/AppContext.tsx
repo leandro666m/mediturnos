@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   Appointment,
   AppointmentHold,
+  ComprobantePago,
   ConsultationNote,
   Coverage,
   EstadoPago,
@@ -489,6 +490,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     motivo?: string;
     origen: 'portal' | 'dashboard';
     esSobreturno?: boolean;
+    estadoPago?: EstadoPago;
+    comprobantePago?: ComprobantePago;
   }): { success: boolean; appointment?: Appointment; error?: string } => {
     const srv = services.find(s => s.id === params.serviceId);
     if (!srv) {
@@ -892,7 +895,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const notasPaciente = notes
       .filter(n => n.patientId === patientId)
-      .sort((a, b) => new Date(b.actualizadoEn || b.creadoEn).getTime() - new Date(a.actualizadoEn || a.creadoEn).getTime());
+      .sort((a, b) => new Date(b.actualizadoEn || b.atendidoEn).getTime() - new Date(a.actualizadoEn || a.atendidoEn).getTime());
 
     const turnosPaciente = appointments
       .filter(a => a.patientId === patientId || a.pacienteDni === paciente.dni)
@@ -951,9 +954,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   ${notasPaciente.map(nota => `
     <div class="nota-card">
-      <div class="nota-fecha">Fecha: ${new Date(nota.creadoEn).toLocaleDateString('es-AR')} ${new Date(nota.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
-      <div class="nota-titulo">${nota.titulo}</div>
-      <div class="nota-cuerpo">${nota.contenidoTexto || nota.contenidoJson || 'Sin contenido registrado'}</div>
+      <div class="nota-fecha">Fecha: ${new Date(nota.atendidoEn).toLocaleDateString('es-AR')} ${new Date(nota.atendidoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+      <div class="nota-titulo">Evolución / ${nota.especialidad || 'Consulta'}</div>
+      <div class="nota-cuerpo">${nota.textoPlano || 'Sin contenido registrado'}</div>
     </div>
   `).join('')}
 
