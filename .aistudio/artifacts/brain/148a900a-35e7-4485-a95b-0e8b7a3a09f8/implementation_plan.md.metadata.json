@@ -1,6 +1,6 @@
 {
-  "summary": "Plan de desarrollo integral para MediTurnos v6 (Hito 1 completo), integrando el Portal del Paciente PWA mobile-first y el Dashboard del Profesional con datos demo del Lic. Martín Benítez, gestión de turnos, notas clínicas con autoguardado y mensajería WhatsApp.",
-  "updatedAt": "2026-10-13T16:27:48.269077795Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Plan de arquitectura actualizado según las modificaciones del usuario:\n1. Autenticación con Google y creación de 'carpeta maestra' como base de datos organizada en Google Drive (configuración, turnos y pacientes con historias clínicas y adjuntos) con botón de conexión ubicado en el Modal de Perfil/Configuración.\n2. Diseño relacional completo en PostgreSQL con DDL SQL estructurado para MySQL Workbench/pgAdmin y diagrama Entidad-Relación (Mermaid ERD) para la documentación técnica.",
+  "updatedAt":  "2026-10-22T19:50:56.477260817Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

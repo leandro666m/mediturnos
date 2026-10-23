@@ -9,12 +9,26 @@ import {
   LayoutDashboard,
   CheckCircle2,
   AlertCircle,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { PWAInstallButton } from './PWAInstallButton';
 
 export const HeaderNav: React.FC = () => {
-  const { professional, activeZone, setActiveZone, resetToDemoData } = useApp();
+  const {
+    professional,
+    activeZone,
+    setActiveZone,
+    resetToDemoData,
+    isDriveConnected,
+    driveSyncStatus,
+    lastDriveSync,
+    syncDataWithDrive,
+    driveFolderUrl,
+  } = useApp();
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
@@ -65,8 +79,35 @@ export const HeaderNav: React.FC = () => {
             </button>
           </div>
 
-          {/* Doctor Activo, PWA Install & Reset Demo */}
+          {/* Doctor Activo, PWA Install, Google Drive Status & Reset Demo */}
           <div className="flex items-center gap-2.5">
+            {/* Indicador de Google Drive */}
+            {isDriveConnected ? (
+              <div
+                title={
+                  lastDriveSync
+                    ? `Sincronizado con Google Drive (${new Date(lastDriveSync).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })})`
+                    : 'Conectado a Google Drive'
+                }
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-semibold shadow-2xs"
+              >
+                {driveSyncStatus === 'syncing' ? (
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                ) : (
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+                )}
+                <span>{driveSyncStatus === 'syncing' ? 'Sincronizando...' : 'Drive al día'}</span>
+              </div>
+            ) : (
+              <div
+                title="Datos almacenados localmente en este navegador. Puedes conectar Google Drive desde tu perfil."
+                className="hidden md:flex items-center gap-1 px-2 py-1 text-slate-400 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-medium"
+              >
+                <CloudOff className="w-3 h-3 text-slate-400" />
+                <span>Modo Local</span>
+              </div>
+            )}
+
             <PWAInstallButton variant="outline" label="Instalar App" className="hidden sm:flex" />
 
             <div className="hidden lg:flex flex-col text-right">

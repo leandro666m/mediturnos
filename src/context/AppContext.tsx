@@ -15,8 +15,12 @@ import {
   Patient,
   Professional,
   Service,
+  NoteAttachment,
   TimeOff,
   WorkingHours,
+  DriveUserInfo,
+  DriveFolderInfo,
+  SyncStatus,
 } from '../types';
 import {
   generarTurnosIniciales,
@@ -31,6 +35,16 @@ import {
   INITIAL_WORKING_HOURS,
 } from '../data/mockData';
 import { formatearFechaCorta, formatearHora, formatearMoneda } from '../modules/format';
+import {
+  initDriveAuth,
+  signInWithGoogleDrive,
+  signOutGoogleDrive,
+  syncEntireWorkspaceToDrive,
+  uploadBinaryFileToDrive,
+  getOrCreateFolder,
+  getDriveAccessToken,
+  setDriveAccessToken,
+} from '../modules/googleDriveService';
 
 interface AppContextType {
   professional: Professional;
@@ -148,6 +162,21 @@ interface AppContextType {
   toggleHolidayLaborable: (holidayId: string) => void;
   updateHolidays: (holidays: Holiday[]) => void;
   resetToDemoData: () => void;
+  // Integración y base de datos Google Drive
+  isDriveConnected: boolean;
+  driveUser: DriveUserInfo | null;
+  isConnectingDrive: boolean;
+  driveSyncStatus: SyncStatus;
+  lastDriveSync: string | null;
+  driveFolderUrl: string | null;
+  driveFolderId: string | null;
+  connectGoogleDrive: () => Promise<{ success: boolean; error?: string }>;
+  disconnectGoogleDrive: () => Promise<void>;
+  syncDataWithDrive: () => Promise<{ success: boolean; error?: string; filesCount?: number }>;
+  uploadPatientFileToDrive: (
+    patientId: string,
+    file: File
+  ) => Promise<{ success: boolean; attachment?: NoteAttachment; error?: string }>;
 }
 
 const STORAGE_KEY = 'mediturnos_state_v6';
@@ -272,6 +301,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_TEMPLATES;
     }
   });
+
+  // Estados para Google Drive y base de datos en la nube
+  const [driveUser, setDriveUser] = useState<DriveUserInfo | null>(() => {
+    try {
+      const saved = localStorage.getItem(`${STORAGE_KEY}_drive_user`);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isDriveConnected, setIsDriveConnected] = useState<boolean>(() => {
+    return !!localStorage.getItem(`${STORAGE_KEY}_drive_connected`);
+  });
+
+  const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+  const [driveSyncStatus, setDriveSyncStatus] = useState<SyncStatus>('idle');
+  const [lastDriveSync, setLastDriveSync] = useState<string | null>(() => {
+    return localStorage.getItem(`${STORAGE_KEY}_last_drive_sync`) || null;
+  });
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(() => {
+    return localStorage.getItem(`${STORAGE_KEY}_drive_folder_url`) || null;
+  });
+  const [driveFolderId, setDriveFolderId] = useState<string | null>(() => {
+    return localStorage.getItem(`${STORAGE_KEY}_drive_folder_id`) || null;
+  });
+
+  // Inicializar listener de autenticación con Google
+  useEffect(() => {
+    const unsubscribe = initDriveAuth(
+      (user, token) => {
+        setDriveAccessToken(token);
+        setIsDriveConnected(true);
+        const uInfo: DriveUserInfo = {
+          email: user.email || '',
+          displayName: user.displayName || 'Profesional de la Salud',
+          photoURL: user.photoURL || undefined,
+        };
+        setDriveUser(uInfo);
+        localStorage.setItem(`${STORAGE_KEY}_drive_user`, JSON.stringify(uInfo));
+        localStorage.setItem(`${STORAGE_KEY}_drive_connected`, 'true');
+      },
+      () => {
+        if (!localStorage.getItem(`${STORAGE_KEY}_drive_connected`)) {
+          setIsDriveConnected(false);
+          setDriveUser(null);
+        }
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // Guardar cambios en LocalStorage para persistencia
   useEffect(() => {
@@ -1223,6 +1303,178 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTemplates(INITIAL_TEMPLATES);
   };
 
+  // Métodos de Google Drive & Base de Datos Cloud
+  const connectGoogleDrive = async (): Promise<{ success: boolean; error?: string }> => {
+    setIsConnectingDrive(true);
+    setDriveSyncStatus('syncing');
+    try {
+      const res = await signInWithGoogleDrive();
+      if (!res) {
+        setDriveSyncStatus('idle');
+        return { success: false, error: 'Inicio de sesión cancelado.' };
+      }
+
+      const userInfo: DriveUserInfo = {
+        email: res.user.email || '',
+        displayName: res.user.displayName || 'Profesional de la Salud',
+        photoURL: res.user.photoURL || undefined,
+      };
+
+      setDriveUser(userInfo);
+      setIsDriveConnected(true);
+      localStorage.setItem(`${STORAGE_KEY}_drive_user`, JSON.stringify(userInfo));
+      localStorage.setItem(`${STORAGE_KEY}_drive_connected`, 'true');
+
+      // Sincronización inicial para crear la carpeta maestra MediTurnos_Data y tablas
+      const syncRes = await syncEntireWorkspaceToDrive({
+        professional,
+        locations,
+        services,
+        workingHours,
+        holidays,
+        patients,
+        appointments,
+        notes,
+        templates,
+      });
+
+      if (syncRes.success) {
+        const ahora = new Date().toISOString();
+        setDriveSyncStatus('synced');
+        setLastDriveSync(ahora);
+        setDriveFolderUrl(syncRes.folders.masterFolderUrl);
+        setDriveFolderId(syncRes.folders.masterFolderId);
+        localStorage.setItem(`${STORAGE_KEY}_last_drive_sync`, ahora);
+        localStorage.setItem(`${STORAGE_KEY}_drive_folder_url`, syncRes.folders.masterFolderUrl);
+        localStorage.setItem(`${STORAGE_KEY}_drive_folder_id`, syncRes.folders.masterFolderId);
+      } else {
+        setDriveSyncStatus('error');
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error al conectar Google Drive:', err);
+      setDriveSyncStatus('error');
+      return { success: false, error: err.message || 'Error al conectar con Google Drive.' };
+    } finally {
+      setIsConnectingDrive(false);
+    }
+  };
+
+  const disconnectGoogleDrive = async () => {
+    try {
+      await signOutGoogleDrive();
+    } catch (e) {
+      console.error(e);
+    }
+    setDriveUser(null);
+    setIsDriveConnected(false);
+    setDriveSyncStatus('idle');
+    localStorage.removeItem(`${STORAGE_KEY}_drive_user`);
+    localStorage.removeItem(`${STORAGE_KEY}_drive_connected`);
+  };
+
+  const syncDataWithDrive = async (): Promise<{
+    success: boolean;
+    error?: string;
+    filesCount?: number;
+  }> => {
+    if (!getDriveAccessToken()) {
+      return { success: false, error: 'Se requiere iniciar sesión en Google Drive primero.' };
+    }
+    setDriveSyncStatus('syncing');
+    try {
+      const res = await syncEntireWorkspaceToDrive({
+        professional,
+        locations,
+        services,
+        workingHours,
+        holidays,
+        patients,
+        appointments,
+        notes,
+        templates,
+      });
+
+      if (res.success) {
+        const ahora = new Date().toISOString();
+        setDriveSyncStatus('synced');
+        setLastDriveSync(ahora);
+        setDriveFolderUrl(res.folders.masterFolderUrl);
+        setDriveFolderId(res.folders.masterFolderId);
+        localStorage.setItem(`${STORAGE_KEY}_last_drive_sync`, ahora);
+        localStorage.setItem(`${STORAGE_KEY}_drive_folder_url`, res.folders.masterFolderUrl);
+        localStorage.setItem(`${STORAGE_KEY}_drive_folder_id`, res.folders.masterFolderId);
+        return { success: true, filesCount: res.filesSyncedCount };
+      } else {
+        setDriveSyncStatus('error');
+        return { success: false, error: res.error };
+      }
+    } catch (e: any) {
+      setDriveSyncStatus('error');
+      return { success: false, error: e.message };
+    }
+  };
+
+  const uploadPatientFileToDrive = async (
+    patientId: string,
+    file: File
+  ): Promise<{ success: boolean; attachment?: NoteAttachment; error?: string }> => {
+    try {
+      const targetPatient = patients.find(p => p.id === patientId);
+      if (!targetPatient) {
+        return { success: false, error: 'Paciente no encontrado.' };
+      }
+
+      if (!getDriveAccessToken()) {
+        // Fallback local con object URL cuando no hay sesión Drive
+        const localAtt: NoteAttachment = {
+          id: 'att_' + Math.random().toString(36).slice(2, 8),
+          nombre: file.name,
+          tipoMime: file.type || 'application/octet-stream',
+          tamanoBytes: file.size,
+          url: URL.createObjectURL(file),
+          subidoEn: new Date().toISOString(),
+        };
+        return { success: true, attachment: localAtt };
+      }
+
+      const masterFolder = await getOrCreateFolder('MediTurnos_Data');
+      const pacientesFolder = await getOrCreateFolder('pacientes', masterFolder.id);
+      const folderName = `paciente_${targetPatient.dni}_${targetPatient.nombre.trim().replace(/\s+/g, '_')}`;
+      const patientFolder = await getOrCreateFolder(folderName, pacientesFolder.id);
+      const adjuntosFolder = await getOrCreateFolder('adjuntos', patientFolder.id);
+
+      const uploaded = await uploadBinaryFileToDrive(file, adjuntosFolder.id);
+      return { success: true, attachment: uploaded };
+    } catch (e: any) {
+      console.error('Error al subir adjunto a Drive:', e);
+      return { success: false, error: e.message || 'Error al subir archivo a Google Drive.' };
+    }
+  };
+
+  // Auto-sincronización en segundo plano con debounce cuando se modifican datos si Drive está conectado
+  useEffect(() => {
+    if (!isDriveConnected || !getDriveAccessToken()) return;
+
+    const timer = setTimeout(() => {
+      syncDataWithDrive().catch(err => console.warn('Auto-sync omitido:', err));
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [
+    isDriveConnected,
+    professional,
+    services,
+    locations,
+    workingHours,
+    holidays,
+    patients,
+    appointments,
+    notes,
+    templates,
+  ]);
+
   return (
     <AppContext.Provider
       value={{
@@ -1274,6 +1526,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleHolidayLaborable,
         updateHolidays,
         resetToDemoData,
+        // Google Drive
+        isDriveConnected,
+        driveUser,
+        isConnectingDrive,
+        driveSyncStatus,
+        lastDriveSync,
+        driveFolderUrl,
+        driveFolderId,
+        connectGoogleDrive,
+        disconnectGoogleDrive,
+        syncDataWithDrive,
+        uploadPatientFileToDrive,
       }}
     >
       {children}

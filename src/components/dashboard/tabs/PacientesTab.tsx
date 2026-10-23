@@ -30,6 +30,8 @@ import {
   Edit2,
   Edit3,
   Trash2,
+  ExternalLink,
+  Cloud,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { ConsultationNote, NoteAttachment, Patient } from '../../../types';
@@ -58,6 +60,8 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
     addCoverage,
     exportarGoogleDriveBackup,
     exportarHistoriaClinicaPaciente,
+    uploadPatientFileToDrive,
+    isDriveConnected,
   } = useApp();
 
   const [busqueda, setBusqueda] = useState('');
@@ -90,6 +94,7 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
   const [notaTexto, setNotaTexto] = useState('');
   const [especialidadNota, setEspecialidadNota] = useState(professional.especialidad);
   const [adjuntos, setAdjuntos] = useState<NoteAttachment[]>([]);
+  const [subiendoAdjunto, setSubiendoAdjunto] = useState(false);
   const [estadoGuardado, setEstadoGuardado] = useState<'guardado' | 'guardando' | 'offline'>('guardado');
   const [ultimaGuardada, setUltimaGuardada] = useState<string>('');
 
@@ -359,22 +364,26 @@ Próximo control: `;
     setNotaTexto(prev => (prev ? `${prev}\n\n${soapTemplate}` : soapTemplate));
   };
 
-  // Simular subida de adjuntos (PDF / Estudios)
-  const handleSubirAdjunto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Subida de adjuntos (PDF / Estudios médicos) con soporte para Google Drive
+  const handleSubirAdjunto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0 || !pacienteSeleccionado) return;
 
     const file = files[0];
-    const nuevoAdjunto: NoteAttachment = {
-      id: 'att_' + Math.random().toString(36).slice(2, 8),
-      nombre: file.name,
-      tipoMime: file.type || 'application/pdf',
-      tamanoBytes: file.size,
-      url: URL.createObjectURL(file),
-      subidoEn: new Date().toISOString(),
-    };
-
-    setAdjuntos(prev => [...prev, nuevoAdjunto]);
+    setSubiendoAdjunto(true);
+    try {
+      const res = await uploadPatientFileToDrive(pacienteSeleccionado.id, file);
+      if (res.success && res.attachment) {
+        setAdjuntos(prev => [...prev, res.attachment!]);
+      } else {
+        alert(res.error || 'No se pudo subir el archivo.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error al procesar el archivo.');
+    } finally {
+      setSubiendoAdjunto(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   return (
@@ -646,12 +655,24 @@ Próximo control: `;
                     <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                       <Paperclip className="w-3.5 h-3.5 text-slate-500" />
                       <span>Estudios y Archivos Adjuntos (PDF / Imágenes)</span>
+                      {isDriveConnected && (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 flex items-center gap-1">
+                          <Cloud className="w-2.5 h-2.5" /> Drive
+                        </span>
+                      )}
                     </span>
 
-                    <label className="cursor-pointer text-xs font-bold text-sky-700 hover:text-sky-800 flex items-center gap-1">
-                      <Plus className="w-3 h-3" /> Subir archivo
+                    <label className={`cursor-pointer text-xs font-bold text-sky-700 hover:text-sky-800 flex items-center gap-1 ${subiendoAdjunto ? 'opacity-50 pointer-events-none' : ''}`}>
+                      {subiendoAdjunto ? (
+                        <span>Subiendo a Drive...</span>
+                      ) : (
+                        <>
+                          <Plus className="w-3 h-3" /> Subir archivo
+                        </>
+                      )}
                       <input
                         type="file"
+                        disabled={subiendoAdjunto}
                         onChange={handleSubirAdjunto}
                         className="hidden"
                         accept=".pdf,.png,.jpg,.jpeg"
@@ -664,15 +685,27 @@ Próximo control: `;
                       {adjuntos.map(att => (
                         <div
                           key={att.id}
-                          className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                          className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs hover:border-slate-300 transition-colors"
                         >
                           <File className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                          <span className="font-medium text-slate-800 truncate max-w-[200px]">
+                          <span className="font-medium text-slate-800 truncate max-w-[180px]">
                             {att.nombre}
                           </span>
                           <span className="text-[10px] text-slate-400">
                             ({Math.round(att.tamanoBytes / 1024)} KB)
                           </span>
+                          {(att.driveWebViewLink || att.url) && (
+                            <a
+                              href={att.driveWebViewLink || att.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-sky-600 hover:text-sky-700 hover:underline font-bold flex items-center gap-0.5 ml-1"
+                              title="Abrir estudio médico"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>{att.driveWebViewLink ? 'Drive' : 'Ver'}</span>
+                            </a>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -814,13 +847,26 @@ Próximo control: `;
                       key={att.id}
                       className="flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg text-xs"
                     >
-                      <div className="flex items-center gap-2">
-                        <File className="w-4 h-4 text-sky-600" />
-                        <span className="font-medium text-slate-800">{att.nombre}</span>
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <File className="w-4 h-4 text-sky-600 shrink-0" />
+                        <span className="font-medium text-slate-800 truncate">{att.nombre}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400">
-                        {Math.round(att.tamanoBytes / 1024)} KB
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-slate-400">
+                          {Math.round(att.tamanoBytes / 1024)} KB
+                        </span>
+                        {(att.driveWebViewLink || att.url) && (
+                          <a
+                            href={att.driveWebViewLink || att.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-sky-600 hover:text-sky-700 font-bold flex items-center gap-1 hover:underline"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>{att.driveWebViewLink ? 'Abrir en Drive' : 'Abrir'}</span>
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

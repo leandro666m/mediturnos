@@ -725,7 +725,7 @@ export const HorariosTab: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-500">{srv.descripcion}</p>
                     <div className="flex items-center gap-2 pt-1 text-xs">
-                      {srv.modalidades.map(m => (
+                      {srv.modalidades.map((m: string) => (
                         <span key={m} className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-medium capitalize">
                           {m}
                         </span>

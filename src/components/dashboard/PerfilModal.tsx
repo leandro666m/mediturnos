@@ -17,6 +17,10 @@ import {
   Building2,
   ExternalLink,
   Phone,
+  FolderOpen,
+  RefreshCw,
+  LogOut,
+  Cloud,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { FontSizePreference, Location } from '../../types';
@@ -28,7 +32,24 @@ interface PerfilModalProps {
 }
 
 export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => {
-  const { professional, locations, updateProfessional, updateLocations } = useApp();
+  const {
+    professional,
+    locations,
+    updateProfessional,
+    updateLocations,
+    isDriveConnected,
+    driveUser,
+    isConnectingDrive,
+    driveSyncStatus,
+    lastDriveSync,
+    driveFolderUrl,
+    connectGoogleDrive,
+    disconnectGoogleDrive,
+    syncDataWithDrive,
+  } = useApp();
+
+  const [driveFeedback, setDriveFeedback] = useState<string | null>(null);
+  const [isSyncingManual, setIsSyncingManual] = useState(false);
 
   const [nombre, setNombre] = useState(professional.nombre);
   const [titulo, setTitulo] = useState(professional.titulo);
@@ -875,9 +896,183 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
             </div>
           </div>
 
-          {/* Aviso Hito 2 (Google Drive / Sheets) preparado */}
-          <div className="p-3 bg-sky-50 rounded-xl border border-sky-100 text-[11px] text-sky-900">
-            <strong>Sincronización con Google Drive (Hito 2):</strong> Modelo y rutas preparadas para respaldo espejo de fichas clínicas y exportación a Google Sheets.
+          {/* SECCIÓN GOOGLE DRIVE Y BASE DE DATOS EN LA NUBE */}
+          <div className="pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-md bg-sky-50 text-sky-600 flex items-center justify-center">
+                  <FolderOpen className="w-3.5 h-3.5" />
+                </div>
+                <h4 className="font-bold text-slate-900 text-xs sm:text-sm">
+                  Base de Datos & Sincronización en Google Drive
+                </h4>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  isDriveConnected
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-slate-100 text-slate-500 border-slate-200'
+                }`}
+              >
+                {isDriveConnected ? 'Conectado a Google Drive' : 'Modo Local (Sin Conexión Cloud)'}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+              Crea automáticamente la <strong>carpeta maestra</strong> en tu cuenta de Google Drive (<code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-mono">MediTurnos_Data/</code>) donde se organizan las tablas de configuración, turnos e historias clínicas con sus adjuntos médicos.
+            </p>
+
+            {driveFeedback && (
+              <div className="p-2.5 bg-sky-50 border border-sky-200 rounded-xl text-sky-900 text-[11px] font-medium flex items-center gap-2 mb-3">
+                <Check className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span>{driveFeedback}</span>
+              </div>
+            )}
+
+            {!isDriveConnected ? (
+              <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="font-bold text-slate-800 text-xs flex items-center gap-2">
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                      <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                      <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                      <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                    </svg>
+                    <span>Conectar cuenta de Google</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Usa el permiso de menor privilegio (<code className="font-mono text-slate-600">drive.file</code>): MediTurnos solo accede a sus propios archivos, sin ver documentos personales.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isConnectingDrive}
+                  onClick={async () => {
+                    const res = await connectGoogleDrive();
+                    if (res.success) {
+                      setDriveFeedback('¡Cuenta de Google conectada! Se creó la carpeta maestra MediTurnos_Data.');
+                      setTimeout(() => setDriveFeedback(null), 4000);
+                    } else {
+                      setDriveFeedback(res.error || 'No se pudo conectar con Google Drive.');
+                      setTimeout(() => setDriveFeedback(null), 4000);
+                    }
+                  }}
+                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 shadow-2xs flex items-center gap-2 shrink-0 cursor-pointer transition-all disabled:opacity-60"
+                >
+                  {isConnectingDrive ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                      <span>Conectando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+                        <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                        <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                      </svg>
+                      <span>Conectar con Google Drive</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="p-4 bg-emerald-50/50 border border-emerald-200/90 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-800 font-bold overflow-hidden shrink-0">
+                      {driveUser?.photoURL ? (
+                        <img src={driveUser.photoURL} alt="Google Avatar" className="w-full h-full object-cover" />
+                      ) : (
+                        driveUser?.displayName?.charAt(0) || 'G'
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                          {driveUser?.displayName || 'Cuenta de Google'}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                          Sincronización activa
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-mono">
+                        {driveUser?.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('¿Desconectar cuenta de Google Drive? Los datos seguirán guardados en tu dispositivo.')) {
+                        disconnectGoogleDrive();
+                        setDriveFeedback('Cuenta desconectada. La aplicación continuará en modo local.');
+                        setTimeout(() => setDriveFeedback(null), 3000);
+                      }
+                    }}
+                    className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg border border-transparent hover:border-rose-200 flex items-center gap-1.5 self-end sm:self-center cursor-pointer transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Desconectar</span>
+                  </button>
+                </div>
+
+                <div className="pt-2 border-t border-emerald-200/60 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-slate-600">
+                    Última sincronización:{' '}
+                    <span className="font-semibold text-slate-800">
+                      {lastDriveSync
+                        ? new Date(lastDriveSync).toLocaleTimeString('es-AR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          })
+                        : 'Pendiente'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {driveFolderUrl && (
+                      <a
+                        href={driveFolderUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                        <span>Abrir carpeta en Google Drive</span>
+                      </a>
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={isSyncingManual}
+                      onClick={async () => {
+                        setIsSyncingManual(true);
+                        const res = await syncDataWithDrive();
+                        setIsSyncingManual(false);
+                        if (res.success) {
+                          setDriveFeedback(
+                            `Sincronización exitosa: ${res.filesCount || 'todos los'} archivos actualizados en Google Drive.`
+                          );
+                        } else {
+                          setDriveFeedback(res.error || 'Error al sincronizar.');
+                        }
+                        setTimeout(() => setDriveFeedback(null), 4000);
+                      }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingManual ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingManual ? 'Sincronizando...' : 'Sincronizar ahora'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">

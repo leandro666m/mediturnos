@@ -177,6 +177,24 @@ export interface NoteAttachment {
   tamanoBytes: number;
   url: string;
   subidoEn: string;
+  driveFileId?: string;
+  driveWebViewLink?: string;
+}
+
+export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';
+
+export interface DriveUserInfo {
+  email: string;
+  displayName: string;
+  photoURL?: string;
+}
+
+export interface DriveFolderInfo {
+  masterFolderId: string;
+  masterFolderUrl: string;
+  configFolderId?: string;
+  turnosFolderId?: string;
+  pacientesFolderId?: string;
 }
 
 export interface ConsultationNote {
