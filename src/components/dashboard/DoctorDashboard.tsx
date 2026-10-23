@@ -34,7 +34,7 @@ export const DoctorDashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/60 pb-16">
+    <div className="min-h-screen bg-slate-300 pb-16">
       
       {/* HEADER PRINCIPAL DEL DASHBOARD (Regla 1.5) */}
       <div className="bg-white border-b border-slate-200">
