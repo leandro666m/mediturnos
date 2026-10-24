@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useApp } from '../../../context/AppContext';
+import { esSlugReservado, esSlugValido } from '../../../data/mappers';
 
 export const DifusionTab: React.FC = () => {
   const { professional, toggleAgendaPausa, updateProfessional } = useApp();
@@ -70,10 +71,13 @@ export const DifusionTab: React.FC = () => {
   const handleGuardarSlug = () => {
     const clean = slugInput
       .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9-]/g, '-');
-    if (clean.length < 3) {
-      alert('El enlace debe tener al menos 3 caracteres.');
+      .trim();
+    if (!esSlugValido(clean)) {
+      alert('El enlace debe tener entre 3 y 50 caracteres y solo contener letras minúsculas, números y guiones (sin guiones al inicio ni al final).');
+      return;
+    }
+    if (esSlugReservado(clean)) {
+      alert('Este enlace no está disponible. Elegí otro.');
       return;
     }
     updateProfessional({ slug: clean });

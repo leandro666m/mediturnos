@@ -101,27 +101,21 @@ export function calculateAvailability(options: AvailabilityOptions): DiaDisponib
       continue;
     }
 
-    const huecosDelDia: HuecoDisponibilidad[] = [];
+    const huecosMap = new Map<string, HuecoDisponibilidad>();
     const modalidadesDelDia = new Set<Modalidad>();
 
     // Evaluar cada franja
     for (const franja of franjasDelDia) {
-      // 5. Regla de intersección de modalidad (2.3 de la especificación)
-      // Se evalúa si la modalidad de la franja y del servicio son compatibles
+      // La modalidad corresponde a la franja configurada en 'Días y Horarios'
       const modalidadesOfrecibles: Modalidad[] = [];
-      if (service.modalidades.includes('presencial')) {
-        if (franja.modalidad === 'presencial' || franja.modalidad === 'ambas') {
-          modalidadesOfrecibles.push('presencial');
-        }
+      if (franja.modalidad === 'presencial' || franja.modalidad === 'ambas') {
+        modalidadesOfrecibles.push('presencial');
       }
-      if (service.modalidades.includes('videollamada')) {
-        if (franja.modalidad === 'videollamada' || franja.modalidad === 'ambas') {
-          modalidadesOfrecibles.push('videollamada');
-        }
+      if (franja.modalidad === 'videollamada' || franja.modalidad === 'ambas') {
+        modalidadesOfrecibles.push('videollamada');
       }
 
       if (modalidadesOfrecibles.length === 0) {
-        // Incompatible entre servicio y franja
         continue;
       }
 
@@ -202,14 +196,36 @@ export function calculateAvailability(options: AvailabilityOptions): DiaDisponib
 
         // El hueco es válido
         modalidadesOfrecibles.forEach(m => modalidadesDelDia.add(m));
-        huecosDelDia.push({
-          inicio: slotStart.toISOString(),
-          fin: slotEnd.toISOString(),
-          modalidades: modalidadesOfrecibles,
-          locationIds: franja.locationId ? [franja.locationId] : [],
-        });
+
+        const effectiveLocationId =
+          franja.locationId ||
+          (modalidadesOfrecibles.includes('presencial') ? 'loc-belgrano' : undefined);
+
+        const isoKey = slotStart.toISOString();
+        const existingSlot = huecosMap.get(isoKey);
+        if (existingSlot) {
+          for (const m of modalidadesOfrecibles) {
+            if (!existingSlot.modalidades.includes(m)) {
+              existingSlot.modalidades.push(m);
+            }
+          }
+          if (effectiveLocationId && !existingSlot.locationIds.includes(effectiveLocationId)) {
+            existingSlot.locationIds.push(effectiveLocationId);
+          }
+        } else {
+          huecosMap.set(isoKey, {
+            inicio: isoKey,
+            fin: slotEnd.toISOString(),
+            modalidades: [...modalidadesOfrecibles],
+            locationIds: effectiveLocationId ? [effectiveLocationId] : [],
+          });
+        }
       }
     }
+
+    const huecosDelDia = Array.from(huecosMap.values()).sort(
+      (a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime()
+    );
 
     if (huecosDelDia.length > 0) {
       // Días cortos y legibles
@@ -375,17 +391,13 @@ export function getSlotsForDate(options: {
   }>();
 
   for (const franja of franjasDelDia) {
-    // Compatibilidad de modalidad
+    // La modalidad corresponde a la franja configurada en 'Días y Horarios'
     const modalidadesOfrecibles: Modalidad[] = [];
-    if (service.modalidades.includes('presencial')) {
-      if (franja.modalidad === 'presencial' || franja.modalidad === 'ambas') {
-        modalidadesOfrecibles.push('presencial');
-      }
+    if (franja.modalidad === 'presencial' || franja.modalidad === 'ambas') {
+      modalidadesOfrecibles.push('presencial');
     }
-    if (service.modalidades.includes('videollamada')) {
-      if (franja.modalidad === 'videollamada' || franja.modalidad === 'ambas') {
-        modalidadesOfrecibles.push('videollamada');
-      }
+    if (franja.modalidad === 'videollamada' || franja.modalidad === 'ambas') {
+      modalidadesOfrecibles.push('videollamada');
     }
 
     if (modalidadesOfrecibles.length === 0) continue;
@@ -458,8 +470,15 @@ export function getSlotsForDate(options: {
           fin: slotEnd.toISOString(),
           hora: horaStr,
           horaFin: horaFinStr,
-          modalidades: modalidadesOfrecibles,
+          modalidades: [...modalidadesOfrecibles],
         });
+      } else {
+        const existing = slotsMap.get(horaStr)!;
+        for (const m of modalidadesOfrecibles) {
+          if (!existing.modalidades.includes(m)) {
+            existing.modalidades.push(m);
+          }
+        }
       }
     }
   }

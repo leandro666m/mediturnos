@@ -63,7 +63,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
   const [esSobreturno, setEsSobreturno] = useState(false);
 
   // Bloque 3: Cobertura y Motivo
-  const [coberturaId, setCoberturaId] = useState(coverages[0]?.id || '');
+  const [coberturaId, setCoberturaId] = useState('');
   const [plan, setPlan] = useState('');
   const [nroAfiliado, setNroAfiliado] = useState('');
   const [motivo, setMotivo] = useState('');
@@ -104,7 +104,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
         setNombre(p.nombre);
         setTelefono(p.telefonoE164);
         setEmail(p.email || '');
-        setCoberturaId(p.coverageId || coverages[0]?.id || '');
+        setCoberturaId(p.coverageId || '');
         setPlan(p.plan || '');
         setNroAfiliado(p.nroAfiliado || '');
         setPacienteEncontrado(true);
@@ -186,7 +186,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
       pacienteDni: vDni.dni,
       pacienteTelefono: normTel.e164,
       pacienteEmail: email,
-      pacienteCoberturaId: coberturaId,
+      pacienteCoberturaId: coberturaId || null,
       pacientePlan: plan,
       pacienteAfiliado: nroAfiliado,
       motivo,
@@ -538,9 +538,9 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
               </div>
               {disponibilidadDia.slots.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
-                  {disponibilidadDia.slots.map(s => (
+                  {disponibilidadDia.slots.map((s, idx) => (
                     <button
-                      key={s.inicio}
+                      key={`${s.inicio}-${idx}`}
                       type="button"
                       onClick={() => {
                         setHoraTurno(s.hora);
@@ -610,6 +610,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                 }}
                 className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 outline-none bg-white font-medium"
               >
+                <option value="">Particular (sin obra social)</option>
                 {coverages.map(c => (
                   <option key={c.id} value={c.id}>
                     {c.nombre}

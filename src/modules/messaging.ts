@@ -38,6 +38,25 @@ export const CUERPO_RECORDATORIO_DEFAULT =
 
 Por favor avisanos con anticipación si necesitás reprogramar. ¡Muchas gracias!`;
 
+export const CUERPO_REPROGRAMACION_DEFAULT =
+  `Hola {paciente} 🙋‍♂️ Te confirmamos que tu turno con {profesional} ha sido reprogramado:
+
+📆 Nueva Fecha: {fecha}
+
+⌚ Nuevo Horario: {hora}
+
+🩺 Consulta: {servicio}
+
+{bloque_modalidad}
+
+¡Te esperamos!`;
+
+export const CUERPO_CANCELACION_DEFAULT =
+  `Hola {paciente} 🙋‍♂️ Te informamos que tu turno con {profesional} del 📆 {fecha} a las ⌚ {hora} ha sido cancelado.
+
+Podés ingresar nuevamente al enlace del consultorio para elegir un nuevo horario cuando lo desees:
+👉 {link_gestionar}`;
+
 export interface RenderVariables {
   paciente: string;
   profesional: string;

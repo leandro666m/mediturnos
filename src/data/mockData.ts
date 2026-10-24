@@ -15,6 +15,8 @@ import {
   BLOQUE_VIDEOLLAMADA_DEFAULT,
   CUERPO_CONFIRMACION_DEFAULT,
   CUERPO_RECORDATORIO_DEFAULT,
+  CUERPO_REPROGRAMACION_DEFAULT,
+  CUERPO_CANCELACION_DEFAULT,
 } from '../modules/messaging';
 
 export const INITIAL_LOCATIONS: Location[] = [
@@ -105,12 +107,11 @@ export const INITIAL_PROFESSIONAL: Professional = {
     margenMin: 0,
     quietHoursInicio: '22:00',
     quietHoursFin: '08:00',
-    plazoCancelacionHoras: 4,
+    plazoCancelacionHoras: 12, // 12 horas antes
   },
 };
 
 export const INITIAL_COVERAGES: Coverage[] = [
-  { id: 'cov-part', nombre: 'Particular (sin obra social)', tipo: 'particular' },
   { id: 'cov-osde', nombre: 'OSDE', tipo: 'prepaga' },
   { id: 'cov-swiss', nombre: 'Swiss Medical', tipo: 'prepaga' },
   { id: 'cov-galeno', nombre: 'Galeno', tipo: 'prepaga' },
@@ -138,7 +139,7 @@ export const INITIAL_WORKING_HOURS: WorkingHours[] = [
     diaSemana: 1,
     horaInicio: '14:00',
     horaFin: '19:00',
-    modalidad: 'ambas',
+    modalidad: 'presencial',
     descansos: [],
     locationId: 'loc-belgrano',
     activo: true,
@@ -311,8 +312,8 @@ export const INITIAL_PATIENTS: Patient[] = [
     nombre: 'Carlos Alberto Bianchi',
     telefonoE164: '+5491166772288',
     email: 'carlos.bianchi@gmail.com',
-    coverageId: 'cov-part',
-    plan: 'Particular',
+    coverageId: null, // Particular = coverageId nulo (Decisión 2)
+    plan: '',
     nroAfiliado: '',
     notasInternas: 'Contractura cervical recurrente y bruxismo.',
     creadoEn: '2026-09-28T16:00:00Z',
@@ -346,6 +347,22 @@ export const INITIAL_TEMPLATES: MessageTemplate[] = [
     professionalId: 'prof-martin-benitez',
     tipo: 'recordatorio',
     cuerpo: CUERPO_RECORDATORIO_DEFAULT,
+    bloquePresencial: BLOQUE_PRESENCIAL_DEFAULT,
+    bloqueVideollamada: BLOQUE_VIDEOLLAMADA_DEFAULT,
+  },
+  {
+    id: 'tpl-reprog',
+    professionalId: 'prof-martin-benitez',
+    tipo: 'reprogramacion',
+    cuerpo: CUERPO_REPROGRAMACION_DEFAULT,
+    bloquePresencial: BLOQUE_PRESENCIAL_DEFAULT,
+    bloqueVideollamada: BLOQUE_VIDEOLLAMADA_DEFAULT,
+  },
+  {
+    id: 'tpl-canc',
+    professionalId: 'prof-martin-benitez',
+    tipo: 'cancelacion',
+    cuerpo: CUERPO_CANCELACION_DEFAULT,
     bloquePresencial: BLOQUE_PRESENCIAL_DEFAULT,
     bloqueVideollamada: BLOQUE_VIDEOLLAMADA_DEFAULT,
   },
@@ -473,7 +490,7 @@ export function generarTurnosIniciales(baseDate: Date = new Date()): Appointment
       pacienteDni: '24580912',
       pacienteTelefono: '+5491166772288',
       pacienteEmail: 'carlos.bianchi@gmail.com',
-      pacienteCobertura: 'Particular (sin obra social)',
+      pacienteCobertura: 'Particular',
     },
     // 5. Turno de MAÑANA: 10:00 hs (Pendiente)
     {

@@ -2,7 +2,8 @@ export type Modalidad = 'presencial' | 'videollamada';
 export type ModalidadFranja = 'presencial' | 'videollamada' | 'ambas';
 
 export type EstadoTurno = 'pendiente' | 'atendido' | 'ausente' | 'cancelado' | 'reprogramado';
-export type EstadoPago = 'sin_pago' | 'pagado';
+export type EstadoPago = 'sin_pago' | 'pagado' | 'exento';
+export type ActorCambio = 'paciente' | 'profesional' | 'sistema';
 
 export interface Location {
   id: string;
@@ -20,8 +21,10 @@ export interface Service {
   duracionMin: number;
   precioCentavos: number;
   mostrarPrecio: boolean;
-  modalidades: Modalidad[];
+  modalidades?: Modalidad[];
   activo: boolean;
+  moneda?: string; // Default 'ARS'
+  orden?: number;
 }
 
 export interface WorkingBreak {
@@ -61,20 +64,20 @@ export interface Professional {
   id: string;
   publicId: string;
   slug: string;
-  nombre: string;
+  nombre: string; // Nombre completo en un solo campo
   titulo: string;
   especialidad: string;
-  matriculaNacional: string;
-  matriculaProvincial: string;
-  aliasCobro: string;
-  titularCobro: string;
-  cbu?: string;
+  matriculaNacional?: string;
+  matriculaProvincial?: string;
+  aliasCobro?: string;
+  titularCobro?: string;
+  cbu?: string; // 22 dígitos o vacío
   cuit?: string;
   banco?: string;
   zonaHoraria: string;
   agendaPausada: boolean;
-  telefonoContactoPrivado: string; // Solo interno, NUNCA visible al paciente (D-17)
-  fotoPerfil?: string; // URL o base64 de la foto de perfil del profesional
+  telefonoContactoPrivado?: string; // Solo interno, NUNCA visible al paciente (D-17)
+  fotoPerfil?: string; // Ruta en bucket 'fotos-perfil' o URL pública
   tamanoTexto?: FontSizePreference; // 'minimo' (compacto), 'predeterminado' (estándar), 'grande' (ampliado)
   parametros: {
     grillaMin: number;
@@ -83,7 +86,7 @@ export interface Professional {
     margenMin: number;
     quietHoursInicio: string; // "22:00"
     quietHoursFin: string;    // "08:00"
-    plazoCancelacionHoras: number;
+    plazoCancelacionHoras: number; // default 24. Aplica a CANCELAR y a REPROGRAMAR
   };
 }
 
@@ -97,10 +100,10 @@ export interface Patient {
   id: string;
   professionalId: string;
   dni: string;
-  nombre: string;
+  nombre: string; // Nombre completo en un solo campo
   telefonoE164: string;
   email?: string;
-  coverageId: string;
+  coverageId: string | null; // null = Particular
   plan?: string;
   nroAfiliado?: string;
   notasInternas?: string;
@@ -112,7 +115,7 @@ export interface AppointmentStatusHistory {
   appointmentId: string;
   desde: EstadoTurno | 'creacion';
   hacia: EstadoTurno;
-  actor: 'paciente' | 'profesional' | 'sistema';
+  actor: ActorCambio;
   en: string;
   motivo?: string;
 }
@@ -141,12 +144,13 @@ export interface Appointment {
   motivo?: string;
   origen: 'portal' | 'dashboard';
   esSobreturno: boolean;
-  reprogramadoDe?: string;
-  reprogramadoA?: string;
+  reprogramadoDe?: string; // id del turno anterior (en el nuevo)
+  reprogramadoA?: string; // id del turno nuevo (derivado)
   manageToken?: string;
-  canceladoPor?: 'paciente' | 'profesional';
+  canceladoPor?: ActorCambio;
+  notasCancelacion?: string;
   creadoEn: string;
-  // Campos del paciente embebidos para conveniencia de visualización
+  // Campos del paciente embebidos para conveniencia de visualización (View Model)
   pacienteNombre: string;
   pacienteDni: string;
   pacienteTelefono: string;
@@ -214,7 +218,7 @@ export interface ConsultationNote {
 export interface MessageTemplate {
   id: string;
   professionalId: string;
-  tipo: 'confirmacion' | 'recordatorio';
+  tipo: 'confirmacion' | 'recordatorio' | 'reprogramacion' | 'cancelacion';
   cuerpo: string;
   bloquePresencial: string;
   bloqueVideollamada: string;

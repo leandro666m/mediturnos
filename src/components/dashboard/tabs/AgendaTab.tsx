@@ -808,11 +808,11 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                   {disponibilidadReprog.slots.length > 0 ? (
                     <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-h-44 overflow-y-auto">
                       <div className="flex flex-wrap gap-1.5">
-                        {disponibilidadReprog.slots.map((s: { hora: string; inicio: string; fin: string }) => {
+                        {disponibilidadReprog.slots.map((s: { hora: string; inicio: string; fin: string }, idx: number) => {
                           const isSelected = nuevaHora === s.hora;
                           return (
                             <button
-                              key={s.inicio}
+                              key={`${s.inicio}-${idx}`}
                               type="button"
                               onClick={() => {
                                 setNuevaHora(s.hora);

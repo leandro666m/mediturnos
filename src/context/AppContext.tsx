@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
+  ActorCambio,
   Appointment,
   AppointmentHold,
   ComprobantePago,
@@ -34,6 +35,18 @@ import {
   INITIAL_TEMPLATES,
   INITIAL_WORKING_HOURS,
 } from '../data/mockData';
+import {
+  PortalAgendaPublicaResult,
+  PortalCancelarTurnoResult,
+  PortalConfirmarTurnoResult,
+  PortalHoldResult,
+  PortalReprogramarTurnoResult,
+  PortalVerTurnoResult,
+} from '../data/repository';
+import {
+  recortarHora,
+  traducirErrorBase,
+} from '../data/mappers';
 import { formatearFechaCorta, formatearHora, formatearMoneda } from '../modules/format';
 import {
   initDriveAuth,
@@ -82,7 +95,7 @@ interface AppContextType {
     pacienteDni: string;
     pacienteTelefono: string;
     pacienteEmail?: string;
-    pacienteCoberturaId: string;
+    pacienteCoberturaId?: string | null;
     pacientePlan?: string;
     pacienteAfiliado?: string;
     motivo?: string;
@@ -119,7 +132,7 @@ interface AppContextType {
     nombre: string;
     telefonoE164: string;
     email?: string;
-    coverageId: string;
+    coverageId?: string | null;
     plan?: string;
     nroAfiliado?: string;
     notasInternas?: string;
@@ -131,7 +144,7 @@ interface AppContextType {
       nombre: string;
       telefonoE164: string;
       email?: string;
-      coverageId: string;
+      coverageId?: string | null;
       plan?: string;
       nroAfiliado?: string;
       notasInternas?: string;
@@ -162,6 +175,50 @@ interface AppContextType {
   toggleHolidayLaborable: (holidayId: string) => void;
   updateHolidays: (holidays: Holiday[]) => void;
   resetToDemoData: () => void;
+
+  // Funciones del Portal Público (Contrato Supabase RPC Sección 5)
+  portalAgendaPublica: (params: {
+    p_ref: string;
+    p_desde: string;
+    p_hasta: string;
+    p_session_id?: string;
+  }) => Promise<PortalAgendaPublicaResult>;
+  portalCrearHold: (params: {
+    p_ref: string;
+    p_servicio_id: string;
+    p_inicio: string;
+    p_modalidad: Modalidad;
+    p_sede_id?: string;
+    p_session_id: string;
+    p_ip?: string;
+  }) => Promise<PortalHoldResult>;
+  portalConfirmarTurno: (params: {
+    p_ref: string;
+    p_hold_id: string;
+    p_session_id: string;
+    p_dni: string;
+    p_nombre: string;
+    p_telefono_e164: string;
+    p_email?: string;
+    p_cobertura_id?: string | null;
+    p_plan?: string;
+    p_nro_afiliado?: string;
+    p_motivo?: string;
+    p_ip?: string;
+  }) => Promise<PortalConfirmarTurnoResult>;
+  portalVerTurno: (params: { p_token: string }) => Promise<PortalVerTurnoResult>;
+  portalCancelarTurno: (params: {
+    p_token: string;
+    p_motivo?: string;
+    p_ip?: string;
+  }) => Promise<PortalCancelarTurnoResult>;
+  portalReprogramarTurno: (params: {
+    p_token: string;
+    p_hold_id: string;
+    p_session_id: string;
+    p_ip?: string;
+  }) => Promise<PortalReprogramarTurnoResult>;
+
   // Integración y base de datos Google Drive
   isDriveConnected: boolean;
   driveUser: DriveUserInfo | null;
@@ -184,16 +241,29 @@ const STORAGE_KEY = 'mediturnos_state_v6';
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sessionToken] = useState(() => 'sess_' + Math.random().toString(36).slice(2, 10));
+  const [sessionToken] = useState(() => {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return 'sess_' + crypto.randomUUID().replace(/-/g, '');
+      }
+    } catch {
+      // fallback
+    }
+    return 'sess_' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  });
   const [activeZone, setActiveZone] = useState<'dashboard' | 'portal'>('dashboard');
 
-  // Inicialización de estado con soporte para LocalStorage
+  // Inicialización de estado con soporte para LocalStorage y migraciones
   const [professional, setProfessional] = useState<Professional>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_prof`);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (!parsed.tamanoTexto) parsed.tamanoTexto = 'predeterminado';
+        if (!parsed.parametros) parsed.parametros = {};
+        if (parsed.parametros.plazoCancelacionHoras === undefined) {
+          parsed.parametros.plazoCancelacionHoras = 12;
+        }
         return parsed;
       }
       return INITIAL_PROFESSIONAL;
@@ -231,7 +301,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [workingHours, setWorkingHours] = useState<WorkingHours[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_hours`);
-      return saved ? JSON.parse(saved) : INITIAL_WORKING_HOURS;
+      const raw: WorkingHours[] = saved ? JSON.parse(saved) : INITIAL_WORKING_HOURS;
+      if (Array.isArray(raw)) {
+        const seen = new Set<string>();
+        return raw
+          .filter(item => {
+            if (!item.id || seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          })
+          .map(wh => {
+            // Garantizar que toda franja presencial o mixta tenga una sede asignada válida
+            if ((wh.modalidad === 'presencial' || wh.modalidad === 'ambas') && !wh.locationId) {
+              return { ...wh, locationId: 'loc-belgrano' };
+            }
+            return wh;
+          });
+      }
+      return INITIAL_WORKING_HOURS;
     } catch {
       return INITIAL_WORKING_HOURS;
     }
@@ -258,7 +345,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [coverages, setCoverages] = useState<Coverage[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_coverages`);
-      return saved ? JSON.parse(saved) : INITIAL_COVERAGES;
+      let list: Coverage[] = saved ? JSON.parse(saved) : INITIAL_COVERAGES;
+      // Migración Sección 2.2: Eliminar coberturas sembradas con tipo 'particular' o id 'cov-part'
+      list = list.filter(c => c.tipo !== 'particular' && c.id !== 'cov-part');
+      return list;
     } catch {
       return INITIAL_COVERAGES;
     }
@@ -267,7 +357,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [patients, setPatients] = useState<Patient[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_patients`);
-      return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
+      const list: Patient[] = saved ? JSON.parse(saved) : INITIAL_PATIENTS;
+      // Migración Sección 2.2: Si el paciente usaba 'cov-part' o no tenía cobertura, coverageId = null
+      return list.map(p => {
+        let covId = p.coverageId;
+        if (covId === 'cov-part' || covId === '' || (typeof covId === 'string' && !covId.trim())) {
+          covId = null;
+        }
+        return { ...p, coverageId: covId };
+      });
     } catch {
       return INITIAL_PATIENTS;
     }
@@ -276,7 +374,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_appointments`);
-      return saved ? JSON.parse(saved) : generarTurnosIniciales();
+      const list: Appointment[] = saved ? JSON.parse(saved) : generarTurnosIniciales();
+      return list.map(a => {
+        let covNombre = a.pacienteCobertura;
+        if (covNombre === 'Particular (sin obra social)' || !covNombre) {
+          covNombre = 'Particular';
+        }
+        return {
+          ...a,
+          pacienteCobertura: covNombre,
+        };
+      });
     } catch {
       return generarTurnosIniciales();
     }
@@ -296,7 +404,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [templates, setTemplates] = useState<MessageTemplate[]>(() => {
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_templates`);
-      return saved ? JSON.parse(saved) : INITIAL_TEMPLATES;
+      const raw: MessageTemplate[] = saved ? JSON.parse(saved) : INITIAL_TEMPLATES;
+      const combined = [...raw];
+      ['reprogramacion', 'cancelacion'].forEach(tipo => {
+        if (!combined.some(t => t.tipo === tipo)) {
+          const initTpl = INITIAL_TEMPLATES.find(t => t.tipo === tipo);
+          if (initTpl) combined.push(initTpl);
+        }
+      });
+      return combined;
     } catch {
       return INITIAL_TEMPLATES;
     }
@@ -453,7 +569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     nombre: string;
     telefonoE164: string;
     email?: string;
-    coverageId: string;
+    coverageId?: string | null;
     plan?: string;
     nroAfiliado?: string;
     notasInternas?: string;
@@ -475,7 +591,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nombre: data.nombre.trim(),
       telefonoE164: data.telefonoE164,
       email: data.email?.trim(),
-      coverageId: data.coverageId,
+      coverageId: data.coverageId || null, // null = Particular
       plan: data.plan?.trim(),
       nroAfiliado: data.nroAfiliado?.trim(),
       notasInternas: data.notasInternas?.trim(),
@@ -493,7 +609,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nombre: string;
       telefonoE164: string;
       email?: string;
-      coverageId: string;
+      coverageId?: string | null;
       plan?: string;
       nroAfiliado?: string;
       notasInternas?: string;
@@ -522,7 +638,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       nombre: data.nombre !== undefined ? data.nombre.trim() : pacienteActual.nombre,
       telefonoE164: data.telefonoE164 !== undefined ? data.telefonoE164 : pacienteActual.telefonoE164,
       email: data.email !== undefined ? data.email.trim() : pacienteActual.email,
-      coverageId: data.coverageId !== undefined ? data.coverageId : pacienteActual.coverageId,
+      coverageId: data.coverageId !== undefined ? (data.coverageId || null) : pacienteActual.coverageId,
       plan: data.plan !== undefined ? data.plan.trim() : pacienteActual.plan,
       nroAfiliado: data.nroAfiliado !== undefined ? data.nroAfiliado.trim() : pacienteActual.nroAfiliado,
       notasInternas: data.notasInternas !== undefined ? data.notasInternas.trim() : pacienteActual.notasInternas,
@@ -531,7 +647,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPatients(prev => prev.map(p => (p.id === id ? actualizado : p)));
 
     // Sincronizar datos visibles en citas de este paciente
-    const cov = coverages.find(c => c.id === actualizado.coverageId);
+    const cov = actualizado.coverageId ? coverages.find(c => c.id === actualizado.coverageId) : null;
+    const coberturaNombre = cov ? cov.nombre : 'Particular';
+
     setAppointments(prev =>
       prev.map(app => {
         if (app.patientId === id) {
@@ -541,7 +659,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             pacienteDni: actualizado.dni,
             pacienteTelefono: actualizado.telefonoE164,
             pacienteEmail: actualizado.email,
-            pacienteCobertura: cov ? cov.nombre : app.pacienteCobertura,
+            pacienteCobertura: coberturaNombre,
             pacientePlan: actualizado.plan,
             pacienteAfiliado: actualizado.nroAfiliado,
           };
@@ -564,7 +682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pacienteDni: string;
     pacienteTelefono: string;
     pacienteEmail?: string;
-    pacienteCoberturaId: string;
+    pacienteCoberturaId?: string | null;
     pacientePlan?: string;
     pacienteAfiliado?: string;
     motivo?: string;
@@ -596,17 +714,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nombre: params.pacienteNombre.trim(),
         telefonoE164: params.pacienteTelefono,
         email: params.pacienteEmail?.trim(),
-        coverageId: params.pacienteCoberturaId,
+        coverageId: params.pacienteCoberturaId || null,
         plan: params.pacientePlan?.trim(),
         nroAfiliado: params.pacienteAfiliado?.trim(),
         creadoEn: new Date().toISOString(),
       };
       setPatients(prev => [...prev, nuevoPaciente]);
       patientId = nuevoPaciente.id;
+      pacienteExistente = nuevoPaciente;
     }
 
-    // Obtener nombre de la cobertura
-    const cov = coverages.find(c => c.id === params.pacienteCoberturaId);
+    // Obtener nombre de la cobertura (null o no encontrada = Particular)
+    const effectiveCovId = params.pacienteCoberturaId ?? pacienteExistente.coverageId;
+    const cov = effectiveCovId ? coverages.find(c => c.id === effectiveCovId) : null;
     const coberturaNombre = cov ? cov.nombre : 'Particular';
 
     // Generar token de gestión único para el paciente
@@ -661,6 +781,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...app,
           estado: nuevoEstado,
           motivo: motivo || app.motivo,
+          canceladoPor: nuevoEstado === 'cancelado' ? ('profesional' as ActorCambio) : app.canceladoPor,
+          notasCancelacion: nuevoEstado === 'cancelado' ? (motivo || 'Cancelado por el profesional') : app.notasCancelacion,
         };
       })
     );
@@ -706,8 +828,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       inicio: nuevoInicio,
       fin: nuevoFin,
       estado: 'pendiente',
+      origen: 'dashboard',
       esSobreturno: esSobreturno !== undefined ? esSobreturno : turnoOriginal.esSobreturno,
       reprogramadoDe: turnoOriginal.id,
+      reprogramadoA: undefined,
       creadoEn: new Date().toISOString(),
     };
 
@@ -767,8 +891,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return savedNote!;
   };
 
+  // Sección 4: Borrar pacientes, turnos, fichas, notas está BLOQUEADO por diseño
   const deleteConsultationNote = (noteId: string) => {
-    setNotes(prev => prev.filter(n => n.id !== noteId));
+    console.warn('Borrado bloqueado por diseño: los datos clínicos y de agenda se conservan.', noteId);
   };
 
   const updateProfessional = (data: Partial<Professional>) => {
@@ -1099,7 +1224,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'No es posible cancelar un turno que ya ha sido atendido.' };
     }
 
-    const horasMin = professional.parametros.plazoCancelacionHoras || 4;
+    const horasMin = professional.parametros.plazoCancelacionHoras ?? 24;
     const inicioMs = new Date(turno.inicio).getTime();
     const ahoraMs = Date.now();
     const difHoras = (inicioMs - ahoraMs) / (1000 * 60 * 60);
@@ -1107,7 +1232,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (difHoras < horasMin) {
       return {
         success: false,
-        error: `El plazo de cancelación online es de hasta ${horasMin} horas de anticipación. Por favor comunícate directamente con el consultorio por WhatsApp.`,
+        error: `El plazo de cancelación online es de hasta ${horasMin} horas de anticipación. Por favor comunicate directamente con el consultorio.`,
       };
     }
 
@@ -1119,6 +1244,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             estado: 'cancelado',
             canceladoPor: 'paciente',
             motivo: motivo || 'Cancelado por el paciente desde el portal',
+            notasCancelacion: motivo || 'Cancelado por el paciente desde el portal',
           };
         }
         return app;
@@ -1141,6 +1267,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'No se puede reprogramar un turno cancelado o ya atendido.' };
     }
 
+    const horasMin = professional.parametros.plazoCancelacionHoras ?? 24;
+    const inicioMs = new Date(turnoOriginal.inicio).getTime();
+    const ahoraMs = Date.now();
+    const difHoras = (inicioMs - ahoraMs) / (1000 * 60 * 60);
+
+    if (difHoras < horasMin) {
+      return {
+        success: false,
+        error: `El plazo para reprogramar online es de hasta ${horasMin} horas de anticipación. Por favor comunicate directamente con el consultorio.`,
+      };
+    }
+
     const nuevoId = 'app_' + Math.random().toString(36).slice(2, 10);
     const nuevoTurno: Appointment = {
       ...turnoOriginal,
@@ -1148,7 +1286,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       inicio: nuevoInicio,
       fin: nuevoFin,
       estado: 'pendiente',
+      origen: 'portal',
       reprogramadoDe: turnoOriginal.id,
+      reprogramadoA: undefined,
       creadoEn: new Date().toISOString(),
     };
 
@@ -1166,6 +1306,479 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     return { success: true, newAppointment: nuevoTurno };
+  };
+
+  // ============================================================================
+  // Funciones del Portal Público (Contrato Supabase RPC Sección 5)
+  // ============================================================================
+
+  const portalAgendaPublica = async (params: {
+    p_ref: string;
+    p_desde: string;
+    p_hasta: string;
+    p_session_id?: string;
+  }): Promise<PortalAgendaPublicaResult> => {
+    const { p_ref, p_desde, p_hasta, p_session_id } = params;
+    const match = professional.slug === p_ref || professional.publicId === p_ref;
+    if (!match) throw new Error('profesional_no_encontrado');
+
+    const dDesde = new Date(p_desde);
+    const dHasta = new Date(p_hasta);
+    if (isNaN(dDesde.getTime()) || isNaN(dHasta.getTime()) || dHasta < dDesde) {
+      throw new Error('rango_invalido');
+    }
+    const diffDias = Math.round((dHasta.getTime() - dDesde.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDias > 62) {
+      throw new Error('rango_invalido');
+    }
+
+    const ocupados: Array<{ inicio: string; fin: string }> = [];
+
+    // Turnos activos (sin datos de pacientes)
+    appointments.forEach(a => {
+      if (['pendiente', 'atendido', 'ausente'].includes(a.estado) && !a.esSobreturno) {
+        if (a.inicio < p_hasta + 'T23:59:59Z' && a.fin > p_desde + 'T00:00:00Z') {
+          ocupados.push({ inicio: a.inicio, fin: a.fin });
+        }
+      }
+    });
+
+    // Holds ajenos
+    const nowIso = new Date().toISOString();
+    holds.forEach(h => {
+      if (h.venceEn > nowIso && h.sessionToken !== p_session_id) {
+        if (h.inicio < p_hasta + 'T23:59:59Z' && h.fin > p_desde + 'T00:00:00Z') {
+          ocupados.push({ inicio: h.inicio, fin: h.fin });
+        }
+      }
+    });
+
+    // Ausencias
+    timeOffs.forEach(t => {
+      if (t.inicio < p_hasta + 'T23:59:59Z' && t.fin > p_desde + 'T00:00:00Z') {
+        ocupados.push({ inicio: t.inicio, fin: t.fin });
+      }
+    });
+
+    return {
+      profesional: {
+        id_publico: professional.publicId,
+        slug: professional.slug,
+        nombre: professional.nombre,
+        titulo: professional.titulo,
+        especialidad: professional.especialidad,
+        matricula_nacional: professional.matriculaNacional || null,
+        matricula_provincial: professional.matriculaProvincial || null,
+        foto_perfil_path: professional.fotoPerfil || null,
+        agenda_pausada: professional.agendaPausada,
+        zona_horaria: professional.zonaHoraria,
+        intervalo_turnos_min: professional.parametros.grillaMin,
+        anticipacion_minima_hs: professional.parametros.anticipacionMinHoras,
+        horizonte_maximo_dias: professional.parametros.horizonteDias,
+        margen_entre_turnos_min: professional.parametros.margenMin,
+        plazo_cancelacion_hs: professional.parametros.plazoCancelacionHoras ?? 24,
+      },
+      servicios: services.filter(s => s.activo).map(s => {
+        let mod: any = 'ambas';
+        if (s.modalidades && s.modalidades.length === 1) {
+          mod = s.modalidades[0];
+        }
+        return {
+          id: s.id,
+          nombre: s.nombre,
+          descripcion: s.descripcion || null,
+          duracion_min: s.duracionMin,
+          modalidad: mod,
+          arancel_centavos: s.mostrarPrecio ? s.precioCentavos : null,
+          moneda: s.moneda || 'ARS',
+        };
+      }),
+      sedes: locations.filter(l => l.activa).map(l => ({
+        id: l.id,
+        nombre: l.nombre,
+        direccion: l.direccion,
+        indicaciones: l.indicaciones || null,
+        maps_url: l.mapsUrl || null,
+      })),
+      coberturas: coverages.map(c => ({
+        id: c.id,
+        nombre: c.nombre,
+        tipo: c.tipo,
+      })),
+      franjas: workingHours.filter(w => w.activo).map(w => ({
+        id: w.id,
+        dia_semana: w.diaSemana,
+        hora_inicio: recortarHora(w.horaInicio),
+        hora_fin: recortarHora(w.horaFin),
+        modalidad_permitida: w.modalidad as any,
+        sede_id: w.locationId || null,
+        descansos: (w.descansos || []).map(d => ({
+          hora_inicio: recortarHora(d.inicio),
+          hora_fin: recortarHora(d.fin),
+        })),
+      })),
+      ocupados,
+      feriados: holidays
+        .filter(h => h.fecha >= p_desde && h.fecha <= p_hasta)
+        .map(h => ({
+          fecha: h.fecha,
+          nombre: h.nombre,
+          laborable: h.laborable,
+        })),
+    };
+  };
+
+  const portalCrearHold = async (params: {
+    p_ref: string;
+    p_servicio_id: string;
+    p_inicio: string;
+    p_modalidad: Modalidad;
+    p_sede_id?: string;
+    p_session_id: string;
+    p_ip?: string;
+  }): Promise<PortalHoldResult> => {
+    const { p_ref, p_servicio_id, p_inicio, p_modalidad, p_sede_id, p_session_id } = params;
+    if (!p_session_id || p_session_id.trim().length < 8 || p_session_id.length > 128) {
+      throw new Error('sesion_invalida');
+    }
+    if ((p_modalidad as string) === 'ambas') {
+      throw new Error('modalidad_invalida');
+    }
+    const match = professional.slug === p_ref || professional.publicId === p_ref;
+    if (!match) throw new Error('profesional_no_encontrado');
+    if (professional.agendaPausada) throw new Error('agenda_pausada');
+
+    const srv = services.find(s => s.id === p_servicio_id && s.activo);
+    if (!srv) throw new Error('servicio_no_disponible');
+
+    const effectiveSedeId =
+      p_modalidad === 'presencial'
+        ? (p_sede_id || locations.find(l => l.activa)?.id || locations[0]?.id)
+        : undefined;
+
+    if (p_modalidad === 'presencial' && locations.some(l => l.activa) && !effectiveSedeId) {
+      throw new Error('sede_requerida');
+    }
+
+    const iniMs = new Date(p_inicio).getTime();
+    const finMs = iniMs + srv.duracionMin * 60 * 1000;
+    const p_fin = new Date(finMs).toISOString();
+
+    const now = Date.now();
+    const anticMinMs = (professional.parametros.anticipacionMinHoras ?? 2) * 3600 * 1000;
+    if (iniMs < now + anticMinMs) {
+      throw new Error('fuera_de_anticipacion');
+    }
+    const horizMaxMs = (professional.parametros.horizonteDias ?? 30) * 24 * 3600 * 1000;
+    if (iniMs > now + horizMaxMs) {
+      throw new Error('fuera_de_horizonte');
+    }
+
+    // Verificar colisión con turnos o bloqueos ajenos
+    const solapaTurno = appointments.some(app => {
+      if (['cancelado', 'reprogramado'].includes(app.estado) || app.esSobreturno) return false;
+      const appIni = new Date(app.inicio).getTime();
+      const appFin = new Date(app.fin).getTime();
+      return iniMs < appFin && finMs > appIni;
+    });
+    if (solapaTurno) throw new Error('horario_ocupado');
+
+    const solapaHold = holds.some(h => {
+      if (h.sessionToken === p_session_id) return false;
+      if (new Date(h.venceEn).getTime() <= now) return false;
+      const hIni = new Date(h.inicio).getTime();
+      const hFin = new Date(h.fin).getTime();
+      return iniMs < hFin && finMs > hIni;
+    });
+    if (solapaHold) throw new Error('horario_ocupado');
+
+    // Hold por 10 minutos
+    const expira = new Date(now + 10 * 60 * 1000).toISOString();
+    const holdId = 'hold_' + Math.random().toString(36).slice(2, 10);
+    const nuevoHold: AppointmentHold = {
+      id: holdId,
+      professionalId: professional.id,
+      serviceId: srv.id,
+      inicio: p_inicio,
+      fin: p_fin,
+      modalidad: p_modalidad,
+      locationId: effectiveSedeId,
+      sessionToken: p_session_id,
+      venceEn: expira,
+    };
+
+    setHolds(prev => [...prev.filter(h => h.sessionToken !== p_session_id && h.venceEn > new Date().toISOString()), nuevoHold]);
+
+    return {
+      hold_id: holdId,
+      inicio: p_inicio,
+      fin: p_fin,
+      expira,
+    };
+  };
+
+  const portalConfirmarTurno = async (params: {
+    p_ref: string;
+    p_hold_id: string;
+    p_session_id: string;
+    p_dni: string;
+    p_nombre: string;
+    p_telefono_e164: string;
+    p_email?: string;
+    p_cobertura_id?: string | null;
+    p_plan?: string;
+    p_nro_afiliado?: string;
+    p_motivo?: string;
+    p_ip?: string;
+  }): Promise<PortalConfirmarTurnoResult> => {
+    const {
+      p_ref,
+      p_hold_id,
+      p_session_id,
+      p_dni,
+      p_nombre,
+      p_telefono_e164,
+      p_email,
+      p_cobertura_id,
+      p_plan,
+      p_nro_afiliado,
+      p_motivo,
+    } = params;
+
+    const match = professional.slug === p_ref || professional.publicId === p_ref;
+    if (!match) throw new Error('profesional_no_encontrado');
+    if (professional.agendaPausada) throw new Error('agenda_pausada');
+
+    const cleanDni = p_dni.toUpperCase().replace(/\D/g, '');
+    if (cleanDni.length < 7 || cleanDni.length > 8) throw new Error('datos_invalidos');
+    if (!p_nombre.trim() || p_nombre.trim().length > 150) throw new Error('datos_invalidos');
+
+    const targetHold = holds.find(
+      h => h.id === p_hold_id && h.sessionToken === p_session_id && h.venceEn > new Date().toISOString()
+    );
+    if (!targetHold) throw new Error('reserva_vencida');
+
+    const srv = services.find(s => s.id === targetHold.serviceId);
+    if (!srv) throw new Error('servicio_no_disponible');
+
+    // Upsert paciente: si el DNI ya existe, NO se modifican sus datos (Sección 5.1)
+    let paciente = patients.find(p => p.dni === cleanDni);
+    if (!paciente) {
+      const nuevoPaciente: Patient = {
+        id: 'pat_' + Math.random().toString(36).slice(2, 10),
+        professionalId: professional.id,
+        dni: cleanDni,
+        nombre: p_nombre.trim(),
+        telefonoE164: p_telefono_e164,
+        email: p_email?.trim() || undefined,
+        coverageId: p_cobertura_id || null, // null = Particular
+        plan: p_plan?.trim() || undefined,
+        nroAfiliado: p_nro_afiliado?.trim() || undefined,
+        creadoEn: new Date().toISOString(),
+      };
+      paciente = nuevoPaciente;
+      setPatients(prev => [nuevoPaciente, ...prev]);
+    }
+
+    const cov = paciente.coverageId ? coverages.find(c => c.id === paciente.coverageId) : null;
+    const coberturaNombre = cov ? cov.nombre : 'Particular';
+
+    const manageToken = 'mng_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+    const turnoId = 'app_' + Math.random().toString(36).slice(2, 10);
+
+    const nuevoTurno: Appointment = {
+      id: turnoId,
+      professionalId: professional.id,
+      patientId: paciente.id,
+      serviceId: targetHold.serviceId,
+      locationId: targetHold.locationId,
+      modalidad: targetHold.modalidad,
+      inicio: targetHold.inicio,
+      fin: targetHold.fin,
+      estado: 'pendiente',
+      estadoPago: 'sin_pago',
+      precioCentavos: srv.precioCentavos,
+      motivo: p_motivo?.trim() || undefined,
+      origen: 'portal',
+      esSobreturno: false,
+      manageToken,
+      creadoEn: new Date().toISOString(),
+      pacienteNombre: paciente.nombre,
+      pacienteDni: paciente.dni,
+      pacienteTelefono: paciente.telefonoE164,
+      pacienteEmail: paciente.email,
+      pacienteCobertura: coberturaNombre,
+      pacientePlan: paciente.plan,
+      pacienteAfiliado: paciente.nroAfiliado,
+    };
+
+    setAppointments(prev => [nuevoTurno, ...prev]);
+    setHolds(prev => prev.filter(h => h.id !== targetHold.id));
+
+    const sedeObj = targetHold.locationId ? locations.find(l => l.id === targetHold.locationId) : null;
+
+    return {
+      turno_id: turnoId,
+      manage_token: manageToken,
+      inicio: targetHold.inicio,
+      fin: targetHold.fin,
+      modalidad: targetHold.modalidad,
+      servicio: srv.nombre,
+      arancel_centavos: srv.mostrarPrecio ? srv.precioCentavos : null,
+      sede: sedeObj ? {
+        nombre: sedeObj.nombre,
+        direccion: sedeObj.direccion,
+        indicaciones: sedeObj.indicaciones || null,
+        maps_url: sedeObj.mapsUrl || null,
+      } : null,
+      datos_cobro: srv.precioCentavos > 0 && professional.aliasCobro ? {
+        alias: professional.aliasCobro,
+        titular: professional.titularCobro || professional.nombre,
+      } : null,
+    };
+  };
+
+  const portalVerTurno = async (params: { p_token: string }): Promise<PortalVerTurnoResult> => {
+    const { p_token } = params;
+    const turno = appointments.find(a => a.manageToken === p_token || a.id === p_token);
+    if (!turno) throw new Error('turno_no_encontrado');
+
+    const srv = services.find(s => s.id === turno.serviceId);
+    const sedeObj = turno.locationId ? locations.find(l => l.id === turno.locationId) : null;
+    const plazoHs = professional.parametros.plazoCancelacionHoras ?? 24;
+
+    const iniMs = new Date(turno.inicio).getTime();
+    const ahoraMs = Date.now();
+    const dentroDePlazo = turno.estado === 'pendiente' && (iniMs - plazoHs * 3600 * 1000) > ahoraMs;
+
+    const reprogramadoA = appointments.find(a => a.reprogramadoDe === turno.id)?.id || null;
+
+    return {
+      turno_id: turno.id,
+      servicio_id: turno.serviceId,
+      inicio: turno.inicio,
+      fin: turno.fin,
+      estado: turno.estado,
+      modalidad: turno.modalidad,
+      servicio: srv?.nombre || 'Consulta',
+      profesional: professional.nombre,
+      slug: professional.slug,
+      sede: sedeObj ? {
+        nombre: sedeObj.nombre,
+        direccion: sedeObj.direccion,
+        maps_url: sedeObj.mapsUrl || null,
+      } : null,
+      plazo_cancelacion_hs: plazoHs,
+      puede_cancelar: dentroDePlazo,
+      puede_reprogramar: dentroDePlazo,
+      reprogramado_a: reprogramadoA,
+    };
+  };
+
+  const portalCancelarTurno = async (params: {
+    p_token: string;
+    p_motivo?: string;
+    p_ip?: string;
+  }): Promise<PortalCancelarTurnoResult> => {
+    const { p_token, p_motivo } = params;
+    const turno = appointments.find(a => a.manageToken === p_token || a.id === p_token);
+    if (!turno) throw new Error('turno_no_encontrado');
+    if (turno.estado !== 'pendiente') throw new Error('turno_no_cancelable');
+
+    const plazoHs = professional.parametros.plazoCancelacionHoras ?? 24;
+    const iniMs = new Date(turno.inicio).getTime();
+    if (iniMs - plazoHs * 3600 * 1000 <= Date.now()) {
+      throw new Error('fuera_de_plazo');
+    }
+
+    setAppointments(prev =>
+      prev.map(a =>
+        a.id === turno.id
+          ? {
+              ...a,
+              estado: 'cancelado' as EstadoTurno,
+              canceladoPor: 'paciente' as ActorCambio,
+              notasCancelacion: p_motivo || 'Cancelado por el paciente desde el portal',
+            }
+          : a
+      )
+    );
+
+    return { turno_id: turno.id, estado: 'cancelado' };
+  };
+
+  const portalReprogramarTurno = async (params: {
+    p_token: string;
+    p_hold_id: string;
+    p_session_id: string;
+    p_ip?: string;
+  }): Promise<PortalReprogramarTurnoResult> => {
+    const { p_token, p_hold_id, p_session_id } = params;
+    const oldTurno = appointments.find(a => a.manageToken === p_token || a.id === p_token);
+    if (!oldTurno) throw new Error('turno_no_encontrado');
+    if (oldTurno.estado !== 'pendiente') throw new Error('turno_no_reprogramable');
+
+    const plazoHs = professional.parametros.plazoCancelacionHoras ?? 24;
+    const iniMs = new Date(oldTurno.inicio).getTime();
+    if (iniMs - plazoHs * 3600 * 1000 <= Date.now()) {
+      throw new Error('fuera_de_plazo');
+    }
+    if (professional.agendaPausada) throw new Error('agenda_pausada');
+
+    const hold = holds.find(
+      h => h.id === p_hold_id && h.sessionToken === p_session_id && h.venceEn > new Date().toISOString()
+    );
+    if (!hold) throw new Error('reserva_vencida');
+    if (hold.serviceId !== oldTurno.serviceId) throw new Error('servicio_distinto');
+
+    const newToken = 'mng_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+    const newId = 'app_' + Math.random().toString(36).slice(2, 10);
+
+    const newTurno: Appointment = {
+      ...oldTurno,
+      id: newId,
+      inicio: hold.inicio,
+      fin: hold.fin,
+      modalidad: hold.modalidad,
+      locationId: hold.locationId,
+      estado: 'pendiente',
+      origen: 'portal',
+      reprogramadoDe: oldTurno.id,
+      reprogramadoA: undefined,
+      manageToken: newToken,
+      creadoEn: new Date().toISOString(),
+    };
+
+    setAppointments(prev =>
+      prev
+        .map(a =>
+          a.id === oldTurno.id
+            ? { ...a, estado: 'reprogramado' as EstadoTurno, reprogramadoA: newId }
+            : a
+        )
+        .concat(newTurno)
+    );
+
+    setHolds(prev => prev.filter(h => h.id !== hold.id));
+
+    const srv = services.find(s => s.id === hold.serviceId);
+    const sedeObj = hold.locationId ? locations.find(l => l.id === hold.locationId) : null;
+
+    return {
+      turno_id: newId,
+      turno_anterior_id: oldTurno.id,
+      manage_token: newToken,
+      inicio: hold.inicio,
+      fin: hold.fin,
+      modalidad: hold.modalidad,
+      servicio: srv?.nombre || 'Consulta',
+      sede: sedeObj ? {
+        nombre: sedeObj.nombre,
+        direccion: sedeObj.direccion,
+        indicaciones: sedeObj.indicaciones || null,
+        maps_url: sedeObj.mapsUrl || null,
+      } : null,
+    };
   };
 
   const uploadPaymentProof = (
@@ -1526,6 +2139,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleHolidayLaborable,
         updateHolidays,
         resetToDemoData,
+        // Funciones del Portal Público
+        portalAgendaPublica,
+        portalCrearHold,
+        portalConfirmarTurno,
+        portalVerTurno,
+        portalCancelarTurno,
+        portalReprogramarTurno,
         // Google Drive
         isDriveConnected,
         driveUser,

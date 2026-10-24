@@ -54,7 +54,6 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
     professional,
     coverages,
     saveConsultationNote,
-    deleteConsultationNote,
     addPatient,
     updatePatient,
     addCoverage,
@@ -101,9 +100,6 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
   // Modal de lectura de nota histórica
   const [notaLectura, setNotaLectura] = useState<ConsultationNote | null>(null);
 
-  // Modal para confirmar eliminación de nota histórica
-  const [notaAEliminar, setNotaAEliminar] = useState<ConsultationNote | null>(null);
-
   // Modal de Creación / Edición de Paciente
   const [modalPaciente, setModalPaciente] = useState<{
     abierto: boolean;
@@ -130,7 +126,7 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
       nombre: '',
       telefono: '',
       email: '',
-      coberturaId: coverages[0]?.id || '',
+      coberturaId: '', // '' = Particular (cobertura_id nulo)
       plan: '',
       nroAfiliado: '',
       notasInternas: '',
@@ -147,7 +143,7 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
       nombre: p.nombre,
       telefono: p.telefonoE164,
       email: p.email || '',
-      coberturaId: p.coverageId || coverages[0]?.id || '',
+      coberturaId: p.coverageId || '',
       plan: p.plan || '',
       nroAfiliado: p.nroAfiliado || '',
       notasInternas: p.notasInternas || '',
@@ -176,7 +172,7 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
         nombre: modalPaciente.nombre,
         telefonoE164: normTel.e164,
         email: modalPaciente.email,
-        coverageId: modalPaciente.coberturaId,
+        coverageId: modalPaciente.coberturaId || null,
         plan: modalPaciente.plan,
         nroAfiliado: modalPaciente.nroAfiliado,
         notasInternas: modalPaciente.notasInternas,
@@ -195,7 +191,7 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
         nombre: modalPaciente.nombre,
         telefonoE164: normTel.e164,
         email: modalPaciente.email,
-        coverageId: modalPaciente.coberturaId,
+        coverageId: modalPaciente.coberturaId || null,
         plan: modalPaciente.plan,
         nroAfiliado: modalPaciente.nroAfiliado,
         notasInternas: modalPaciente.notasInternas,
@@ -295,16 +291,6 @@ export const PacientesTab: React.FC<PacientesTabProps> = ({ pacientePreseleccion
     if (editorEl) {
       editorEl.scrollIntoView({ behavior: 'smooth' });
     }
-  };
-
-  // Confirmar eliminación de nota histórica
-  const handleConfirmarEliminarNota = () => {
-    if (!notaAEliminar) return;
-    deleteConsultationNote(notaAEliminar.id);
-    if (notaActualId === notaAEliminar.id) {
-      handleIniciarNuevaNota();
-    }
-    setNotaAEliminar(null);
   };
 
   // Autoguardado con debounce inteligente (Regla 1.8 / 4.7)
@@ -446,9 +432,13 @@ Próximo control: `;
                     <span>·</span>
                     <span>{p.telefonoE164}</span>
                   </div>
-                  {p.plan && (
+                  {p.coverageId ? (
                     <span className="text-[10px] text-sky-800 font-semibold bg-sky-100/60 px-1.5 py-0.2 rounded mt-1 inline-block">
-                      {p.plan}
+                      {coverages.find(c => c.id === p.coverageId)?.nombre || p.plan || 'Obra Social'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-600 font-semibold bg-slate-100 px-1.5 py-0.2 rounded mt-1 inline-block">
+                      Particular
                     </span>
                   )}
                 </div>
@@ -492,7 +482,9 @@ Próximo control: `;
                 <div className="flex flex-col sm:items-end gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">
-                      {pacienteSeleccionado.plan || 'Particular'}
+                      {pacienteSeleccionado.coverageId
+                        ? `${coverages.find(c => c.id === pacienteSeleccionado.coverageId)?.nombre || 'Obra Social'}${pacienteSeleccionado.plan ? ` (${pacienteSeleccionado.plan})` : ''}`
+                        : 'Particular'}
                     </span>
                     <button
                       type="button"
@@ -787,15 +779,6 @@ Próximo control: `;
                             <Edit3 className="w-3.5 h-3.5 text-sky-600" />
                             <span className="hidden sm:inline">Editar</span>
                           </button>
-
-                          <button
-                            type="button"
-                            onClick={() => setNotaAEliminar(nota)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                            title="Eliminar registro"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -1035,6 +1018,7 @@ Próximo control: `;
                       }}
                       className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600 bg-white font-medium"
                     >
+                      <option value="">Particular (sin obra social)</option>
                       {coverages.map(cov => (
                         <option key={cov.id} value={cov.id}>
                           {cov.nombre}
@@ -1167,52 +1151,6 @@ Próximo control: `;
                 className="px-4 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-700 shadow-xs transition-colors cursor-pointer"
               >
                 Guardar y Seleccionar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal para Confirmar Eliminación de Nota Clínica */}
-      {notaAEliminar && (
-        <div className="fixed inset-0 z-60 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-2.5 text-red-600 mb-3">
-              <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm text-slate-900">¿Eliminar registro clínico?</h4>
-                <p className="text-[11px] text-slate-500">
-                  {formatearFechaLarga(notaAEliminar.atendidoEn)} · {formatearHora(notaAEliminar.atendidoEn)}
-                </p>
-              </div>
-            </div>
-
-            <div className="text-xs text-slate-600 mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 max-h-24 overflow-y-auto">
-              <p className="line-clamp-3 whitespace-pre-line italic">
-                "{notaAEliminar.textoPlano}"
-              </p>
-            </div>
-
-            <p className="text-xs text-slate-500 mb-4">
-              Esta evolución se eliminará permanentemente de la historia clínica del paciente.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setNotaAEliminar(null)}
-                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmarEliminarNota}
-                className="px-4 py-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-xs transition-colors cursor-pointer"
-              >
-                Eliminar Nota
               </button>
             </div>
           </div>

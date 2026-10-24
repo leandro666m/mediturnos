@@ -48,6 +48,9 @@ export const HorariosTab: React.FC = () => {
   const [margenMin, setMargenMin] = useState(professional.parametros.margenMin);
   const [quietInicio, setQuietInicio] = useState(professional.parametros.quietHoursInicio);
   const [quietFin, setQuietFin] = useState(professional.parametros.quietHoursFin);
+  const [plazoCancelacionHoras, setPlazoCancelacionHoras] = useState(
+    professional.parametros.plazoCancelacionHoras ?? 24
+  );
 
   // Servicios
   const [modalServicio, setModalServicio] = useState<Partial<Service> | null>(null);
@@ -58,6 +61,18 @@ export const HorariosTab: React.FC = () => {
   });
   const [tplRecordatorio, setTplRecordatorio] = useState(() => {
     return templates.find(t => t.tipo === 'recordatorio')?.cuerpo || '';
+  });
+  const [tplReprogramacion, setTplReprogramacion] = useState(() => {
+    return (
+      templates.find(t => t.tipo === 'reprogramacion')?.cuerpo ||
+      'Hola {paciente}, tu turno con {profesional} fue reprogramado para el {fecha} a las {hora}. {bloque_modalidad}'
+    );
+  });
+  const [tplCancelacion, setTplCancelacion] = useState(() => {
+    return (
+      templates.find(t => t.tipo === 'cancelacion')?.cuerpo ||
+      'Hola {paciente}, confirmamos que tu turno con {profesional} del {fecha} a las {hora} fue cancelado.'
+    );
   });
   const [bloquePresencial, setBloquePresencial] = useState(() => {
     return templates.find(t => t.tipo === 'confirmacion')?.bloquePresencial || '';
@@ -242,19 +257,43 @@ export const HorariosTab: React.FC = () => {
     }
   };
 
+  // Validación de solapamiento entre franjas horarias activas del mismo día (restricción franjas_sin_solapamiento)
+  const haySolapamiento = (
+    candidata: { id?: string; diaSemana: number; horaInicio: string; horaFin: string; activo: boolean },
+    lista: WorkingHours[]
+  ): boolean => {
+    if (!candidata.activo) return false;
+    return lista.some(otra => {
+      if (otra.id === candidata.id || !otra.activo || otra.diaSemana !== candidata.diaSemana) {
+        return false;
+      }
+      return candidata.horaInicio < otra.horaFin && candidata.horaFin > otra.horaInicio;
+    });
+  };
+
+  const [errorFranjaMsg, setErrorFranjaMsg] = useState<string | null>(null);
+
+  const mostrarErrorFranja = (msg: string) => {
+    setErrorFranjaMsg(msg);
+    setTimeout(() => setErrorFranjaMsg(null), 4500);
+  };
+
   const handleAgregarFranja = (diaNum: number, franjaAnterior?: WorkingHours) => {
+    const franjasActivasDia = workingHours.filter(wh => wh.diaSemana === diaNum && wh.activo);
     let inicio = '14:00';
     let fin = '18:00';
-    if (franjaAnterior) {
-      if (franjaAnterior.horaFin <= '13:00') {
-        inicio = '14:00';
-        fin = '18:00';
-      } else if (franjaAnterior.horaFin < '18:00') {
-        inicio = franjaAnterior.horaFin;
-        fin = '20:00';
+
+    if (franjasActivasDia.length > 0) {
+      // Tomamos la hora fin más tardía
+      const maxFin = franjasActivasDia.reduce((max, f) => (f.horaFin > max ? f.horaFin : max), '00:00');
+      if (maxFin < '20:00') {
+        inicio = maxFin;
+        const [h, m] = maxFin.split(':').map(Number);
+        const finH = Math.min(23, h + 3);
+        fin = `${String(finH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
       } else {
         inicio = '08:00';
-        fin = '12:00';
+        fin = '10:00';
       }
     }
 
@@ -270,6 +309,11 @@ export const HorariosTab: React.FC = () => {
       locationId: defaultLocId,
       activo: true,
     };
+
+    if (haySolapamiento(nueva, workingHours)) {
+      mostrarErrorFranja('No se pudo agregar el horario automáticamente porque se solapa con otro horario activo existente.');
+      return;
+    }
 
     updateWorkingHours([...workingHours, nueva]);
   };
@@ -287,6 +331,29 @@ export const HorariosTab: React.FC = () => {
   };
 
   const handleUpdateFranja = (id: string, campo: keyof WorkingHours, valor: any) => {
+    const actual = workingHours.find(wh => wh.id === id);
+    if (!actual) return;
+
+    const candidata = { ...actual, [campo]: valor };
+
+    if (campo === 'horaInicio' || campo === 'horaFin') {
+      if (candidata.horaInicio >= candidata.horaFin) {
+        mostrarErrorFranja('La hora de inicio debe ser anterior a la hora de fin.');
+        return;
+      }
+      if (candidata.activo && haySolapamiento(candidata, workingHours)) {
+        mostrarErrorFranja('No se pueden solapar franjas horarias activas para el mismo día (restricción franjas_sin_solapamiento de base de datos).');
+        return;
+      }
+    }
+
+    if (campo === 'activo' && valor === true) {
+      if (haySolapamiento(candidata, workingHours)) {
+        mostrarErrorFranja('No podés activar esta franja porque se solapa con otro horario ya activo para este día.');
+        return;
+      }
+    }
+
     const actualizadas = workingHours.map(wh => {
       if (wh.id !== id) return wh;
       const updated = { ...wh, [campo]: valor };
@@ -309,6 +376,7 @@ export const HorariosTab: React.FC = () => {
         margenMin,
         quietHoursInicio: quietInicio,
         quietHoursFin: quietFin,
+        plazoCancelacionHoras,
       },
     });
     mostrarMensajeGuardado('Parámetros globales guardados correctamente.');
@@ -332,8 +400,42 @@ export const HorariosTab: React.FC = () => {
           bloqueVideollamada: bloqueVideollamadaRec,
         };
       }
+      if (t.tipo === 'reprogramacion') {
+        return {
+          ...t,
+          cuerpo: tplReprogramacion,
+        };
+      }
+      if (t.tipo === 'cancelacion') {
+        return {
+          ...t,
+          cuerpo: tplCancelacion,
+        };
+      }
       return t;
     });
+
+    if (!actualizadas.some(t => t.tipo === 'reprogramacion')) {
+      actualizadas.push({
+        id: 'tpl_reprog',
+        professionalId: professional.id,
+        tipo: 'reprogramacion',
+        cuerpo: tplReprogramacion,
+        bloquePresencial: '',
+        bloqueVideollamada: '',
+      });
+    }
+    if (!actualizadas.some(t => t.tipo === 'cancelacion')) {
+      actualizadas.push({
+        id: 'tpl_cancel',
+        professionalId: professional.id,
+        tipo: 'cancelacion',
+        cuerpo: tplCancelacion,
+        bloquePresencial: '',
+        bloqueVideollamada: '',
+      });
+    }
+
     updateTemplates(actualizadas);
     mostrarMensajeGuardado('Plantillas de WhatsApp guardadas con éxito.');
   };
@@ -350,7 +452,7 @@ export const HorariosTab: React.FC = () => {
       hora: '10:00 hs',
       servicio: 'Consulta Kinefiátrica Inicial',
       valor: '$28.000',
-      alias: professional.aliasCobro,
+      alias: professional.aliasCobro || '',
       direccion: locations[0]?.direccion,
       link_maps: locations[0]?.mapsUrl,
       modalidad: 'presencial',
@@ -368,7 +470,7 @@ export const HorariosTab: React.FC = () => {
       hora: '17:30 hs',
       servicio: 'Teleconsulta de Seguimiento',
       valor: '$19.000',
-      alias: professional.aliasCobro,
+      alias: professional.aliasCobro || '',
       modalidad: 'videollamada',
     }
   );
@@ -384,7 +486,7 @@ export const HorariosTab: React.FC = () => {
       hora: '10:00 hs',
       servicio: 'Consulta Kinefiátrica Inicial',
       valor: '$28.000',
-      alias: professional.aliasCobro,
+      alias: professional.aliasCobro || '',
       direccion: locations[0]?.direccion,
       link_maps: locations[0]?.mapsUrl,
       modalidad: 'presencial',
@@ -402,14 +504,14 @@ export const HorariosTab: React.FC = () => {
       hora: '17:30 hs',
       servicio: 'Teleconsulta de Seguimiento',
       valor: '$19.000',
-      alias: professional.aliasCobro,
+      alias: professional.aliasCobro || '',
       modalidad: 'videollamada',
     }
   );
 
   const renderBotonProbarWhatsApp = (mensaje: string) => {
     const telPrivado = professional.telefonoContactoPrivado;
-    const enlace = construirEnlaceWhatsApp(telPrivado, mensaje);
+    const enlace = construirEnlaceWhatsApp(telPrivado || '', mensaje);
 
     if (!telPrivado || !enlace.valido) {
       return (
@@ -500,6 +602,13 @@ export const HorariosTab: React.FC = () => {
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2 shadow-2xs">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{guardadoMsg}</span>
+        </div>
+      )}
+
+      {errorFranjaMsg && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold flex items-center gap-2 shadow-2xs">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{errorFranjaMsg}</span>
         </div>
       )}
 
@@ -701,7 +810,6 @@ export const HorariosTab: React.FC = () => {
                     duracionMin: 30,
                     precioCentavos: 2000000,
                     mostrarPrecio: true,
-                    modalidades: ['presencial'],
                     activo: true,
                   })
                 }
@@ -724,13 +832,6 @@ export const HorariosTab: React.FC = () => {
                       <span className="text-xs text-slate-600 font-medium">{srv.duracionMin} minutos</span>
                     </div>
                     <p className="text-xs text-slate-500">{srv.descripcion}</p>
-                    <div className="flex items-center gap-2 pt-1 text-xs">
-                      {srv.modalidades.map((m: string) => (
-                        <span key={m} className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-medium capitalize">
-                          {m}
-                        </span>
-                      ))}
-                    </div>
                   </div>
 
                   <div className="flex items-center gap-4 text-right">
@@ -1201,6 +1302,60 @@ export const HorariosTab: React.FC = () => {
               </div>
             </div>
 
+            <hr className="border-slate-100" />
+
+            {/* SECCIÓN 3: PLANTILLA REPROGRAMAR POR WHATSAPP */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold">3</span>
+                  <span>Plantilla — "Reprogramar por WhatsApp"</span>
+                </h4>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Cuerpo del mensaje al reprogramar un turno
+                </label>
+                <textarea
+                  rows={4}
+                  value={tplReprogramacion}
+                  onChange={e => setTplReprogramacion(e.target.value)}
+                  className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:border-amber-500 font-sans leading-relaxed outline-none transition-all"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Variables disponibles: {'{paciente}'}, {'{profesional}'}, {'{fecha}'}, {'{hora}'}, {'{servicio}'}, {'{link_autogestion}'}
+                </p>
+              </div>
+            </div>
+
+            <hr className="border-slate-100" />
+
+            {/* SECCIÓN 4: PLANTILLA CANCELAR POR WHATSAPP */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-[11px] font-bold">4</span>
+                  <span>Plantilla — "Cancelar por WhatsApp"</span>
+                </h4>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Cuerpo del mensaje al cancelar un turno
+                </label>
+                <textarea
+                  rows={4}
+                  value={tplCancelacion}
+                  onChange={e => setTplCancelacion(e.target.value)}
+                  className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:border-rose-500 font-sans leading-relaxed outline-none transition-all"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Variables disponibles: {'{paciente}'}, {'{profesional}'}, {'{fecha}'}, {'{hora}'}, {'{motivo}'}
+                </p>
+              </div>
+            </div>
+
             <div className="flex justify-end pt-3 border-t border-slate-100">
               <button
                 type="button"
@@ -1313,6 +1468,35 @@ export const HorariosTab: React.FC = () => {
                 onChange={e => setQuietFin(e.target.value)}
                 className="w-full text-xs p-2 rounded-lg border border-slate-200"
               />
+            </div>
+
+            <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Plazo límite para cancelar o reprogramar turnos (Horas previas)
+              </label>
+              <select
+                value={plazoCancelacionHoras}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  setPlazoCancelacionHoras(val);
+                  updateProfessional({
+                    parametros: {
+                      ...professional.parametros,
+                      plazoCancelacionHoras: val,
+                    },
+                  });
+                }}
+                className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white"
+              >
+                <option value={4}>4 horas antes</option>
+                <option value={12}>12 horas antes</option>
+                <option value={24}>24 horas antes (Estándar recomendado)</option>
+                <option value={48}>48 horas antes (2 días)</option>
+                <option value={72}>72 horas antes (3 días)</option>
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Si un paciente intenta cancelar o reprogramar su turno faltando menos de estas horas, el sistema se lo impedirá indicando que debe comunicarse por teléfono o WhatsApp.
+              </p>
             </div>
           </div>
 

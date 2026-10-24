@@ -45,6 +45,8 @@ import {
 } from '../../modules/messaging';
 import { generarArchivoIcs } from '../../modules/calendar';
 import { Appointment, HuecoDisponibilidad, Modalidad, Service } from '../../types';
+import { traducirErrorBase } from '../../data/mappers';
+import { INITIAL_LOCATIONS } from '../../data/mockData';
 
 export const PatientPortal: React.FC = () => {
   const {
@@ -63,6 +65,11 @@ export const PatientPortal: React.FC = () => {
     releaseHold,
     bookAppointment,
     uploadPaymentProof,
+    portalCrearHold,
+    portalConfirmarTurno,
+    portalVerTurno,
+    portalCancelarTurno,
+    portalReprogramarTurno,
   } = useApp();
 
   // Estados del flujo de reserva
@@ -75,12 +82,50 @@ export const PatientPortal: React.FC = () => {
   const [holdActivoId, setHoldActivoId] = useState<string | null>(null);
   const [tiempoRestanteHold, setTiempoRestanteHold] = useState<number>(600); // 10 min en segundos
 
+  // Consultorio de atención presencial resuelto de forma determinista y reactiva
+  const consultorioPresencial = useMemo(() => {
+    // 1. Si el hueco seleccionado tiene una ubicación específica configurada
+    if (huecoSeleccionado?.locationIds && huecoSeleccionado.locationIds.length > 0) {
+      const locHueco = locations.find(l => l.id === huecoSeleccionado.locationIds[0]);
+      if (locHueco) return locHueco;
+    }
+    // 2. Si el usuario seleccionó una ubicación específica en el selector
+    if (direccionElegidaId) {
+      const locElegida = locations.find(l => l.id === direccionElegidaId);
+      if (locElegida) return locElegida;
+    }
+    // 3. Primera ubicación activa en la lista
+    const locActiva = locations.find(l => l.activa);
+    if (locActiva) return locActiva;
+    // 4. Primera ubicación en lista
+    if (locations.length > 0) return locations[0];
+    // 5. Fallback canónico si no hubiese sedes en memoria
+    return INITIAL_LOCATIONS[0];
+  }, [huecoSeleccionado, direccionElegidaId, locations]);
+
+  // Mantener direccionElegidaId sincronizado reactivamente con consultorioPresencial
+  useEffect(() => {
+    if (consultorioPresencial?.id && (!direccionElegidaId || !locations.some(l => l.id === direccionElegidaId))) {
+      setDireccionElegidaId(consultorioPresencial.id);
+    }
+  }, [consultorioPresencial?.id, direccionElegidaId, locations]);
+
+  // Sedes disponibles para el hueco seleccionado en Paso 2
+  const ubicacionesPresencialesDisponibles = useMemo(() => {
+    if (!huecoSeleccionado) return [];
+    if (huecoSeleccionado.locationIds && huecoSeleccionado.locationIds.length > 0) {
+      const filtradas = locations.filter(l => l.activa && huecoSeleccionado.locationIds.includes(l.id));
+      if (filtradas.length > 0) return filtradas;
+    }
+    return locations.filter(l => l.activa);
+  }, [huecoSeleccionado, locations]);
+
   // Formulario del Paciente (Paso 3)
   const [nombre, setNombre] = useState('');
   const [dni, setDni] = useState('');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
-  const [coberturaId, setCoberturaId] = useState(coverages[0]?.id || '');
+  const [coberturaId, setCoberturaId] = useState<string>(''); // "" = Particular (sin obra social)
   const [plan, setPlan] = useState('');
   const [nroAfiliado, setNroAfiliado] = useState('');
   const [motivo, setMotivo] = useState('');
@@ -97,11 +142,25 @@ export const PatientPortal: React.FC = () => {
   const [nombreArchivoSubido, setNombreArchivoSubido] = useState<string>('comprobante-transferencia.jpg');
   const [feedbackComprobantePaciente, setFeedbackComprobantePaciente] = useState<string | null>(null);
 
-  // Modal para consultar / autogestión de turno existente
+  // Modal para consultar / autogestión de turno existente (Soporta búsqueda por DNI o Manage Token)
   const [modalConsultarTurno, setModalConsultarTurno] = useState(false);
   const [dniConsulta, setDniConsulta] = useState('');
   const [turnoConsultado, setTurnoConsultado] = useState<Appointment | null>(null);
+  const [infoTurnoAutogestion, setInfoTurnoAutogestion] = useState<{
+    cancelable: boolean;
+    puede_reprogramar: boolean;
+    plazo_cancelacion_hs: number;
+    motivo_no_cancelable?: string;
+  } | null>(null);
   const [errorConsulta, setErrorConsulta] = useState('');
+  const [modoReprogramar, setModoReprogramar] = useState(false);
+  const [fechaReprogramar, setFechaReprogramar] = useState('');
+  const [huecoReprogramar, setHuecoReprogramar] = useState<HuecoDisponibilidad | null>(null);
+  const [modalidadReprogramar, setModalidadReprogramar] = useState<Modalidad>('presencial');
+  const [sedeReprogramarId, setSedeReprogramarId] = useState<string>('');
+  const [motivoCancelacion, setMotivoCancelacion] = useState('');
+  const [mostrarModalCancelar, setMostrarModalCancelar] = useState(false);
+  const [mensajeExitoAutogestion, setMensajeExitoAutogestion] = useState<string | null>(null);
 
   // Turno confirmado sincronizado reactivamente
   const turnoConfirmadoActual = useMemo(() => {
@@ -207,31 +266,76 @@ export const PatientPortal: React.FC = () => {
     return { huecosManana: manana, huecosTarde: tarde };
   }, [diaActualObj]);
 
-  // Avanzar del Paso 2 al Paso 3 creando la Reserva Temporal (Hold)
-  const handleAvanzarPaso3 = () => {
-    if (!huecoSeleccionado || !servicioSeleccionado) return;
-
-    // Crear Hold
-    const res = createHold(
-      servicioSeleccionado.id,
-      huecoSeleccionado.inicio,
-      huecoSeleccionado.fin,
-      modalidadElegida,
-      modalidadElegida === 'presencial' ? direccionElegidaId : undefined
-    );
-
-    if (!res.success || !res.hold) {
-      alert(res.error || 'No se pudo reservar el horario seleccionado.');
-      return;
+  const buscarTurnoPorTokenOId = async (tokenOId: string) => {
+    try {
+      const res = await portalVerTurno({ p_token: tokenOId });
+      if (res && res.turno_id) {
+        const appt = appointments.find(a => a.id === res.turno_id || a.manageToken === tokenOId);
+        if (appt) {
+          setTurnoConsultado(appt);
+          setInfoTurnoAutogestion({
+            cancelable: res.puede_cancelar,
+            puede_reprogramar: res.puede_reprogramar,
+            plazo_cancelacion_hs: res.plazo_cancelacion_hs,
+            motivo_no_cancelable: !res.puede_cancelar
+              ? `El plazo límite para cancelar o reprogramar online (${res.plazo_cancelacion_hs} hs previas) ha vencido.`
+              : undefined,
+          });
+          setModalConsultarTurno(true);
+          setErrorConsulta('');
+          return true;
+        }
+      }
+    } catch (e: any) {
+      setErrorConsulta(traducirErrorBase(e?.message || 'turno_no_encontrado'));
     }
-
-    setHoldActivoId(res.hold.id);
-    setTiempoRestanteHold(600); // 10 min
-    setPaso(3);
+    return false;
   };
 
-  // Enviar y Confirmar Turno (Paso 3 -> Paso 4)
-  const handleConfirmarReserva = (e: React.FormEvent) => {
+  useEffect(() => {
+    const checkHash = () => {
+      const hash = window.location.hash;
+      if (hash.includes('/turno/')) {
+        const token = hash.split('/turno/')[1]?.split('?')[0];
+        if (token) {
+          buscarTurnoPorTokenOId(token);
+        }
+      }
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, [appointments]);
+
+  // Avanzar del Paso 2 al Paso 3 creando la Reserva Temporal (Hold vía RPC de portal)
+  const handleAvanzarPaso3 = async () => {
+    if (!huecoSeleccionado || !servicioSeleccionado) return;
+
+    try {
+      const res = await portalCrearHold({
+        p_ref: professional.slug,
+        p_servicio_id: servicioSeleccionado.id,
+        p_inicio: huecoSeleccionado.inicio,
+        p_modalidad: modalidadElegida,
+        p_sede_id: modalidadElegida === 'presencial' ? (direccionElegidaId || consultorioPresencial.id) : undefined,
+        p_session_id: sessionToken,
+      });
+
+      if (!res || !res.hold_id) {
+        alert(traducirErrorBase('horario_ocupado'));
+        return;
+      }
+
+      setHoldActivoId(res.hold_id);
+      setTiempoRestanteHold(600); // 10 min
+      setPaso(3);
+    } catch (err: any) {
+      alert(traducirErrorBase(err?.message || 'horario_ocupado'));
+    }
+  };
+
+  // Enviar y Confirmar Turno (Paso 3 -> Paso 4 vía RPC de portal)
+  const handleConfirmarReserva = async (e: React.FormEvent) => {
     e.preventDefault();
     const errores: Record<string, string> = {};
 
@@ -256,43 +360,71 @@ export const PatientPortal: React.FC = () => {
 
     if (!servicioSeleccionado || !huecoSeleccionado) return;
 
-    const res = bookAppointment({
-      holdId: holdActivoId || undefined,
-      serviceId: servicioSeleccionado.id,
-      inicio: huecoSeleccionado.inicio,
-      fin: huecoSeleccionado.fin,
-      modalidad: modalidadElegida,
-      locationId: modalidadElegida === 'presencial' ? direccionElegidaId : undefined,
-      pacienteNombre: nombre,
-      pacienteDni: validDni.dni,
-      pacienteTelefono: normTel.e164,
-      pacienteEmail: email,
-      pacienteCoberturaId: coberturaId,
-      pacientePlan: plan,
-      pacienteAfiliado: nroAfiliado,
-      motivo,
-      origen: 'portal',
-    });
+    try {
+      const res = await portalConfirmarTurno({
+        p_ref: professional.slug,
+        p_hold_id: holdActivoId || '',
+        p_session_id: sessionToken,
+        p_dni: validDni.dni,
+        p_nombre: nombre.trim(),
+        p_telefono_e164: normTel.e164,
+        p_email: email.trim() || undefined,
+        p_cobertura_id: coberturaId ? coberturaId : null,
+        p_plan: plan.trim() || undefined,
+        p_nro_afiliado: nroAfiliado.trim() || undefined,
+        p_motivo: motivo.trim() || undefined,
+      });
 
-    if (!res.success || !res.appointment) {
-      alert(res.error || 'Ocurrió un error al confirmar tu turno. Probá nuevamente.');
-      return;
+      if (!res || !res.turno_id) {
+        alert(traducirErrorBase('error_general'));
+        return;
+      }
+
+      const apptConfirmado: Appointment = appointments.find(a => a.id === res.turno_id) || {
+        id: res.turno_id,
+        professionalId: professional.id,
+        patientId: 'pat_' + validDni.dni,
+        serviceId: servicioSeleccionado.id,
+        locationId: modalidadElegida === 'presencial' ? (direccionElegidaId || consultorioPresencial.id) : undefined,
+        pacienteNombre: nombre.trim(),
+        pacienteDni: validDni.dni,
+        pacienteTelefono: normTel.e164,
+        pacienteEmail: email.trim() || undefined,
+        pacienteCobertura: coverages.find(c => c.id === coberturaId)?.nombre || 'Particular',
+        pacientePlan: plan.trim() || undefined,
+        pacienteAfiliado: nroAfiliado.trim() || undefined,
+        inicio: res.inicio || huecoSeleccionado.inicio,
+        fin: res.fin || huecoSeleccionado.fin,
+        estado: 'pendiente',
+        estadoPago: 'sin_pago',
+        precioCentavos: servicioSeleccionado.precioCentavos,
+        origen: 'portal',
+        esSobreturno: false,
+        modalidad: (res.modalidad as Modalidad) || modalidadElegida,
+        motivo: motivo.trim() || undefined,
+        manageToken: res.manage_token,
+        creadoEn: new Date().toISOString(),
+      };
+
+      setTurnoConfirmado(apptConfirmado);
+      setPaso(4);
+    } catch (err: any) {
+      alert(traducirErrorBase(err?.message || 'error_general'));
     }
-
-    setTurnoConfirmado(res.appointment);
-    setPaso(4);
   };
 
   // Mensaje para confirmar por WhatsApp
   const mensajeWhatsApp = useMemo(() => {
     if (!turnoConfirmado) return '';
     const tpl = templates.find(t => t.tipo === 'confirmacion');
-    const dir = locations.find(l => l.id === turnoConfirmado.locationId);
+    const dir =
+      locations.find(l => l.id === turnoConfirmado.locationId) ||
+      (turnoConfirmado.modalidad === 'presencial' ? consultorioPresencial : undefined);
     const variables = prepararVariablesDesdeTurno(
       turnoConfirmado,
       professional,
       servicioSeleccionado || undefined,
-      dir?.direccion,
+      dir ? `${dir.nombre} · ${dir.direccion}` : undefined,
       dir?.mapsUrl
     );
 
@@ -314,6 +446,88 @@ export const PatientPortal: React.FC = () => {
     const s = segundos % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
+
+  // Disponibilidad para reprogramar el turno consultado
+  const diasDisponiblesReprog = useMemo(() => {
+    if (!turnoConsultadoActual) return [];
+    const srv = services.find(s => s.id === turnoConsultadoActual.serviceId) || services[0];
+    if (!srv) return [];
+    return calculateAvailability({
+      professional,
+      service: srv,
+      workingHours,
+      holidays,
+      timeOffs,
+      appointments: appointments.filter(a => a.id !== turnoConsultadoActual.id),
+      holds,
+      currentSessionToken: sessionToken,
+      excludeAppointmentId: turnoConsultadoActual.id,
+    });
+  }, [turnoConsultadoActual, services, professional, workingHours, holidays, timeOffs, appointments, holds, sessionToken]);
+
+  const diaReprogObj = useMemo(() => {
+    if (!fechaReprogramar) return null;
+    return diasDisponiblesReprog.find(d => d.fecha === fechaReprogramar) || null;
+  }, [fechaReprogramar, diasDisponiblesReprog]);
+
+  // Separar huecos de reprogramación en Mañana y Tarde
+  const { huecosReprogManana, huecosReprogTarde } = useMemo(() => {
+    if (!diaReprogObj) return { huecosReprogManana: [], huecosReprogTarde: [] };
+    const manana = diaReprogObj.huecos.filter(h => {
+      const hora = new Date(h.inicio).getHours();
+      return hora < 13;
+    });
+    const tarde = diaReprogObj.huecos.filter(h => {
+      const hora = new Date(h.inicio).getHours();
+      return hora >= 13;
+    });
+    return { huecosReprogManana: manana, huecosReprogTarde: tarde };
+  }, [diaReprogObj]);
+
+  // Sedes disponibles para el hueco de reprogramación seleccionado
+  const ubicacionesReprogPresenciales = useMemo(() => {
+    if (!huecoReprogramar) return [];
+    if (huecoReprogramar.locationIds && huecoReprogramar.locationIds.length > 0) {
+      const filtradas = locations.filter(l => l.activa && huecoReprogramar.locationIds.includes(l.id));
+      if (filtradas.length > 0) return filtradas;
+    }
+    return locations.filter(l => l.activa);
+  }, [huecoReprogramar, locations]);
+
+  // Consultorio presencial resuelto para reprogramación
+  const consultorioReprogPresencial = useMemo(() => {
+    if (huecoReprogramar?.locationIds && huecoReprogramar.locationIds.length > 0) {
+      if (sedeReprogramarId && huecoReprogramar.locationIds.includes(sedeReprogramarId)) {
+        const found = locations.find(l => l.id === sedeReprogramarId);
+        if (found) return found;
+      }
+      const locHueco = locations.find(l => l.id === huecoReprogramar.locationIds[0]);
+      if (locHueco) return locHueco;
+    }
+    if (sedeReprogramarId) {
+      const found = locations.find(l => l.id === sedeReprogramarId);
+      if (found) return found;
+    }
+    const locActiva = locations.find(l => l.activa);
+    if (locActiva) return locActiva;
+    return locations[0] || INITIAL_LOCATIONS[0];
+  }, [huecoReprogramar, sedeReprogramarId, locations]);
+
+  // Al abrir el modo reprogramar, autoseleccionar el primer día con turnos y la modalidad del turno actual
+  useEffect(() => {
+    if (modoReprogramar && diasDisponiblesReprog.length > 0) {
+      if (!fechaReprogramar || !diasDisponiblesReprog.some(d => d.fecha === fechaReprogramar)) {
+        setFechaReprogramar(diasDisponiblesReprog[0].fecha);
+        setHuecoReprogramar(null);
+      }
+      if (turnoConsultadoActual) {
+        setModalidadReprogramar(turnoConsultadoActual.modalidad);
+        if (turnoConsultadoActual.locationId) {
+          setSedeReprogramarId(turnoConsultadoActual.locationId);
+        }
+      }
+    }
+  }, [modoReprogramar, diasDisponiblesReprog, fechaReprogramar, turnoConsultadoActual]);
 
   return (
     <div className="min-h-screen bg-slate-50 py-6 px-3 sm:px-6 flex flex-col items-center">
@@ -603,20 +817,6 @@ export const PatientPortal: React.FC = () => {
                                   <Clock className="w-3 h-3 text-slate-500" />
                                   <span>{srv.duracionMin} min</span>
                                 </span>
-
-                                {srv.modalidades.includes('presencial') && (
-                                  <span className="flex items-center gap-1 text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                                    <MapPin className="w-3 h-3 text-sky-600" />
-                                    <span>Presencial</span>
-                                  </span>
-                                )}
-
-                                {srv.modalidades.includes('videollamada') && (
-                                  <span className="flex items-center gap-1 text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                                    <Video className="w-3 h-3 text-emerald-600" />
-                                    <span>Videollamada</span>
-                                  </span>
-                                )}
                               </div>
                             </div>
 
@@ -723,11 +923,11 @@ export const PatientPortal: React.FC = () => {
                             Mañana
                           </span>
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                            {huecosManana.map(h => {
+                            {huecosManana.map((h, idx) => {
                               const isSlotSelected = huecoSeleccionado?.inicio === h.inicio;
                               return (
                                 <button
-                                  key={h.inicio}
+                                  key={`${h.inicio}-${idx}`}
                                   type="button"
                                   onClick={() => {
                                     setHuecoSeleccionado(h);
@@ -736,6 +936,8 @@ export const PatientPortal: React.FC = () => {
                                     }
                                     if (h.locationIds && h.locationIds.length > 0) {
                                       setDireccionElegidaId(h.locationIds[0]);
+                                    } else {
+                                      setDireccionElegidaId(consultorioPresencial.id);
                                     }
                                   }}
                                   className={`py-2 px-2.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 ${
@@ -752,14 +954,14 @@ export const PatientPortal: React.FC = () => {
                                   }`}>
                                     {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
                                       <>
-                                        <Video className="w-2.5 h-2.5" /> Virtual
+                                        <Video className="w-2.5 h-2.5" /> Videollamada
                                       </>
                                     ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
                                       <>
                                         <MapPin className="w-2.5 h-2.5" /> Presencial
                                       </>
                                     ) : (
-                                      'Pres./Virtual'
+                                      'Pres./Videollamada'
                                     )}
                                   </span>
                                 </button>
@@ -776,11 +978,11 @@ export const PatientPortal: React.FC = () => {
                             Tarde
                           </span>
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                            {huecosTarde.map(h => {
+                            {huecosTarde.map((h, idx) => {
                               const isSlotSelected = huecoSeleccionado?.inicio === h.inicio;
                               return (
                                 <button
-                                  key={h.inicio}
+                                  key={`${h.inicio}-${idx}`}
                                   type="button"
                                   onClick={() => {
                                     setHuecoSeleccionado(h);
@@ -789,6 +991,8 @@ export const PatientPortal: React.FC = () => {
                                     }
                                     if (h.locationIds && h.locationIds.length > 0) {
                                       setDireccionElegidaId(h.locationIds[0]);
+                                    } else {
+                                      setDireccionElegidaId(consultorioPresencial.id);
                                     }
                                   }}
                                   className={`py-2 px-2.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 ${
@@ -805,14 +1009,14 @@ export const PatientPortal: React.FC = () => {
                                   }`}>
                                     {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
                                       <>
-                                        <Video className="w-2.5 h-2.5" /> Virtual
+                                        <Video className="w-2.5 h-2.5" /> Videollamada
                                       </>
                                     ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
                                       <>
                                         <MapPin className="w-2.5 h-2.5" /> Presencial
                                       </>
                                     ) : (
-                                      'Pres./Virtual'
+                                      'Pres./Videollamada'
                                     )}
                                   </span>
                                 </button>
@@ -857,8 +1061,8 @@ export const PatientPortal: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Información y Confirmación del Lugar de Atención Presencial */}
-                      {modalidadElegida === 'presencial' && (
+                      {/* Información y Confirmación del Lugar de Atención Presencial (SOLO una vez seleccionado día y horario) */}
+                      {huecoSeleccionado && modalidadElegida === 'presencial' && (
                         <div className="mt-3.5 p-3.5 bg-sky-50/70 rounded-xl border border-sky-200 text-xs">
                           <div className="flex items-start gap-2.5">
                             <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
@@ -866,62 +1070,50 @@ export const PatientPortal: React.FC = () => {
                               <span className="text-[11px] font-bold text-sky-800 uppercase tracking-wide block mb-1">
                                 Consultorio de atención presencial:
                               </span>
-                              {huecoSeleccionado?.locationIds && huecoSeleccionado.locationIds.length === 1 ? (
-                                <div>
-                                  <span className="font-bold text-slate-800 block text-xs">
-                                    {locations.find(l => l.id === direccionElegidaId)?.nombre || 'Consultorio'}
-                                  </span>
-                                  <span className="text-slate-600 block text-xs mt-0.5">
-                                    {locations.find(l => l.id === direccionElegidaId)?.direccion}
-                                  </span>
-                                  {locations.find(l => l.id === direccionElegidaId)?.indicaciones && (
-                                    <span className="text-[11px] text-slate-500 italic block mt-1">
-                                      Indicaciones: {locations.find(l => l.id === direccionElegidaId)?.indicaciones}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : locations.filter(l => l.activa).length > 1 ? (
+                              
+                              {/* Selector de sede SOLO si hay más de 1 sede activa para este día y horario */}
+                              {ubicacionesPresencialesDisponibles.length > 1 && (
                                 <select
-                                  value={direccionElegidaId}
+                                  value={consultorioPresencial.id}
                                   onChange={e => setDireccionElegidaId(e.target.value)}
-                                  className="w-full text-xs bg-white border border-slate-300 focus:border-sky-600 rounded-lg p-2 text-slate-800 font-medium shadow-2xs"
+                                  className="w-full text-xs bg-white border border-slate-300 focus:border-sky-600 rounded-lg p-2 text-slate-800 font-medium shadow-2xs mb-2"
                                 >
-                                  {locations.filter(l => l.activa).map(loc => (
+                                  {ubicacionesPresencialesDisponibles.map(loc => (
                                     <option key={loc.id} value={loc.id}>
                                       {loc.nombre} — {loc.direccion}
                                     </option>
                                   ))}
                                 </select>
-                              ) : (
-                                <div>
-                                  <span className="font-bold text-slate-800 block text-xs">
-                                    {locations[0]?.nombre || 'Consultorio'}
-                                  </span>
-                                  <span className="text-slate-600 block text-xs mt-0.5">
-                                    {locations[0]?.direccion}
-                                  </span>
-                                </div>
                               )}
 
+                              <div>
+                                <span className="font-bold text-slate-800 block text-xs">
+                                  {consultorioPresencial.nombre}
+                                </span>
+                                <span className="text-slate-600 block text-xs mt-0.5">
+                                  {consultorioPresencial.direccion}
+                                </span>
+                                {consultorioPresencial.indicaciones && (
+                                  <span className="text-[11px] text-slate-500 italic block mt-1">
+                                    Indicaciones: {consultorioPresencial.indicaciones}
+                                  </span>
+                                )}
+                              </div>
+
                               {/* Enlace a Google Maps para la ubicación seleccionada */}
-                              {(() => {
-                                const locSel =
-                                  locations.find(l => l.id === direccionElegidaId) || locations[0];
-                                if (!locSel?.mapsUrl) return null;
-                                return (
-                                  <div className="mt-2 pt-2 border-t border-sky-100 flex items-center">
-                                    <a
-                                      href={locSel.mapsUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
-                                    >
-                                      <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
-                                      <span>Ver ubicación en Google Maps</span>
-                                    </a>
-                                  </div>
-                                );
-                              })()}
+                              {consultorioPresencial.mapsUrl && (
+                                <div className="mt-2 pt-2 border-t border-sky-100 flex items-center">
+                                  <a
+                                    href={consultorioPresencial.mapsUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                    <span>Ver ubicación en Google Maps</span>
+                                  </a>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1002,33 +1194,34 @@ export const PatientPortal: React.FC = () => {
                         {modalidadElegida === 'presencial' ? 'Presencial' : 'Videollamada por WhatsApp'}
                       </span>
                     </div>
-                    {modalidadElegida === 'presencial' && (() => {
-                      const locActual =
-                        locations.find(l => l.id === direccionElegidaId) || locations[0];
-                      return (
-                        <div className="flex flex-col gap-1 pt-0.5">
-                          <div className="flex justify-between items-start">
-                            <span className="text-slate-500 shrink-0">Consultorio:</span>
-                            <span className="font-semibold text-slate-800 text-right">
-                              {locActual ? `${locActual.nombre} · ${locActual.direccion}` : 'Consultorio'}
-                            </span>
-                          </div>
-                          {locActual?.mapsUrl && (
-                            <div className="flex justify-end">
-                              <a
-                                href={locActual.mapsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                                <span>Ver en Google Maps</span>
-                              </a>
-                            </div>
-                          )}
+                    {modalidadElegida === 'presencial' && (
+                      <div className="flex flex-col gap-1 pt-0.5">
+                        <div className="flex justify-between items-start">
+                          <span className="text-slate-500 shrink-0">Consultorio:</span>
+                          <span className="font-semibold text-slate-800 text-right">
+                            {consultorioPresencial.nombre} · {consultorioPresencial.direccion}
+                          </span>
                         </div>
-                      );
-                    })()}
+                        {consultorioPresencial.indicaciones && (
+                          <div className="text-[11px] text-slate-500 text-right italic">
+                            Indicaciones: {consultorioPresencial.indicaciones}
+                          </div>
+                        )}
+                        {consultorioPresencial.mapsUrl && (
+                          <div className="flex justify-end">
+                            <a
+                              href={consultorioPresencial.mapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Ver en Google Maps</span>
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {servicioSeleccionado?.mostrarPrecio && (
                       <div className="flex justify-between pt-1 border-t border-slate-200">
                         <span className="text-slate-500">Valor consulta:</span>
@@ -1137,11 +1330,14 @@ export const PatientPortal: React.FC = () => {
                           onChange={e => setCoberturaId(e.target.value)}
                           className="w-full text-xs p-2.5 rounded-lg border border-slate-200 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 outline-none bg-white"
                         >
-                          {coverages.map(cov => (
-                            <option key={cov.id} value={cov.id}>
-                              {cov.nombre}
-                            </option>
-                          ))}
+                          <option value="">Particular (sin obra social)</option>
+                          {coverages
+                            .filter(cov => cov.id !== 'cov-part')
+                            .map(cov => (
+                              <option key={cov.id} value={cov.id}>
+                                {cov.nombre}
+                              </option>
+                            ))}
                         </select>
                       </div>
 
@@ -1267,13 +1463,13 @@ export const PatientPortal: React.FC = () => {
 
                     {turnoConfirmado.modalidad === 'presencial' && (() => {
                       const locActual =
-                        locations.find(l => l.id === turnoConfirmado.locationId) || locations[0];
+                        locations.find(l => l.id === turnoConfirmado.locationId) || consultorioPresencial;
                       return (
                         <div className="flex flex-col gap-1.5 pt-1.5 border-t border-slate-100">
                           <div className="flex justify-between items-start">
                             <span className="text-slate-500">Lugar:</span>
                             <span className="font-semibold text-slate-800 text-right">
-                              {locActual ? `${locActual.nombre} · ${locActual.direccion}` : 'Consultorio'}
+                              {locActual.nombre} · {locActual.direccion}
                             </span>
                           </div>
                           {locActual?.indicaciones && (
@@ -1344,7 +1540,7 @@ export const PatientPortal: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(professional.aliasCobro);
+                              navigator.clipboard.writeText(professional.aliasCobro || '');
                               setCopiadoAlias(true);
                               setTimeout(() => setCopiadoAlias(false), 2500);
                             }}
@@ -1498,21 +1694,6 @@ export const PatientPortal: React.FC = () => {
                               Foto del ticket o captura de pantalla de la transferencia
                             </span>
                           </label>
-                        </div>
-
-                        {/* Botón rápido para demo en preview */}
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-                          <span>¿Querés probar cómo se ve?</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewComprobante('https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80');
-                              setNombreArchivoSubido('transferencia-bancaria-demo.jpg');
-                            }}
-                            className="text-emerald-700 hover:underline font-bold cursor-pointer"
-                          >
-                            ⚡ Cargar comprobante de prueba
-                          </button>
                         </div>
 
                         {previewComprobante && (
@@ -1750,32 +1931,63 @@ export const PatientPortal: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ingresá tu DNI (sin puntos)
+                  Ingresá tu DNI (sin puntos) o código de turno
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    inputMode="numeric"
                     value={dniConsulta}
                     onChange={e => setDniConsulta(e.target.value)}
-                    placeholder="Ej. 32198540"
-                    className="flex-1 text-xs p-2.5 rounded-xl border border-slate-300 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 outline-none tabular-nums"
+                    placeholder="Ej. 32198540 o código de turno"
+                    className="flex-1 text-xs p-2.5 rounded-xl border border-slate-300 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const clean = dniConsulta.replace(/\D/g, '');
+                    onClick={async () => {
+                      const clean = dniConsulta.trim();
                       if (!clean) {
-                        setErrorConsulta('Por favor ingresá tu número de DNI.');
+                        setErrorConsulta('Por favor ingresá tu DNI o código de turno.');
                         return;
                       }
-                      const encontrado = appointments.find(a => a.pacienteDni === clean && a.estado !== 'cancelado');
+                      let encontrado = appointments.find(a => a.manageToken === clean || a.id === clean);
+                      if (!encontrado) {
+                        const dniDigits = clean.replace(/\D/g, '');
+                        if (dniDigits) {
+                          encontrado = appointments.find(a => a.pacienteDni === dniDigits && a.estado !== 'cancelado');
+                        }
+                      }
                       if (encontrado) {
                         setTurnoConsultado(encontrado);
+                        const plazoConfigurado = professional.parametros.plazoCancelacionHoras ?? 12;
+                        const iniMs = new Date(encontrado.inicio).getTime();
+                        const dentroDePlazo = encontrado.estado === 'pendiente' && (iniMs - plazoConfigurado * 3600 * 1000) > Date.now();
+                        setInfoTurnoAutogestion({
+                          cancelable: dentroDePlazo,
+                          puede_reprogramar: dentroDePlazo,
+                          plazo_cancelacion_hs: plazoConfigurado,
+                          motivo_no_cancelable: !dentroDePlazo
+                            ? `El plazo límite para cancelar o reprogramar online (${plazoConfigurado} hs previas) ha vencido.`
+                            : undefined,
+                        });
+                        try {
+                          const res = await portalVerTurno({ p_token: encontrado.manageToken || encontrado.id });
+                          if (res && res.turno_id) {
+                            setInfoTurnoAutogestion({
+                              cancelable: res.puede_cancelar,
+                              puede_reprogramar: res.puede_reprogramar,
+                              plazo_cancelacion_hs: res.plazo_cancelacion_hs,
+                              motivo_no_cancelable: !res.puede_cancelar
+                                ? `El plazo límite para cancelar o reprogramar online (${res.plazo_cancelacion_hs} hs previas) ha vencido.`
+                                : undefined,
+                            });
+                          }
+                        } catch {
+                          // keep initial info
+                        }
                         setErrorConsulta('');
                       } else {
                         setTurnoConsultado(null);
-                        setErrorConsulta('No encontramos un turno activo con ese DNI.');
+                        setErrorConsulta('No encontramos un turno activo con esos datos.');
                       }
                     }}
                     className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
@@ -1788,6 +2000,12 @@ export const PatientPortal: React.FC = () => {
                 {errorConsulta && (
                   <p className="text-[11px] text-rose-600 mt-1.5 font-medium">{errorConsulta}</p>
                 )}
+                {mensajeExitoAutogestion && (
+                  <div className="p-2.5 mt-2 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{mensajeExitoAutogestion}</span>
+                  </div>
+                )}
               </div>
 
               {/* Si se encontró un turno */}
@@ -1795,7 +2013,9 @@ export const PatientPortal: React.FC = () => {
                 <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50 space-y-3.5 text-xs">
                   <div className="flex justify-between items-start pb-2 border-b border-slate-200">
                     <div>
-                      <span className="text-[11px] text-slate-400 block font-semibold">TURNO #{turnoConsultadoActual.id.slice(4, 10).toUpperCase()}</span>
+                      <span className="text-[11px] text-slate-400 block font-semibold">
+                        TURNO #{turnoConsultadoActual.id.slice(4, 10).toUpperCase()}
+                      </span>
                       <strong className="text-sm text-slate-900 block">{turnoConsultadoActual.pacienteNombre}</strong>
                     </div>
                     <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
@@ -1803,7 +2023,7 @@ export const PatientPortal: React.FC = () => {
                         ? 'bg-emerald-100 text-emerald-800'
                         : turnoConsultadoActual.estado === 'pendiente'
                         ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-200 text-slate-700'
+                        : 'bg-rose-100 text-rose-800'
                     }`}>
                       {turnoConsultadoActual.estado.toUpperCase()}
                     </span>
@@ -1916,6 +2136,439 @@ export const PatientPortal: React.FC = () => {
                       </div>
                     )}
                   </div>
+
+                  {/* Autogestión de Turno: Cancelar / Reprogramar según plazo límite */}
+                  {turnoConsultadoActual.estado === 'pendiente' && (
+                    <div className="pt-2 border-t border-slate-200 space-y-3">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Plazo:</span>
+                        <span className="font-semibold text-slate-700">
+                          Hasta {infoTurnoAutogestion?.plazo_cancelacion_hs ?? professional.parametros.plazoCancelacionHoras ?? 12} hs previas
+                        </span>
+                      </div>
+
+                      {infoTurnoAutogestion?.cancelable ? (
+                        <div className="space-y-2.5">
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setModoReprogramar(!modoReprogramar);
+                                setMostrarModalCancelar(false);
+                              }}
+                              className="py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <Clock className="w-3.5 h-3.5 text-amber-700" />
+                              <span>{modoReprogramar ? 'Volver' : 'Reprogramar Turno'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMostrarModalCancelar(!mostrarModalCancelar);
+                                setModoReprogramar(false);
+                              }}
+                              className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <X className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Cancelar Turno</span>
+                            </button>
+                          </div>
+
+                          {/* Confirmación de Cancelación con motivo */}
+                          {mostrarModalCancelar && (
+                            <div className="p-3 bg-rose-50/50 border border-rose-200 rounded-xl space-y-2">
+                              <span className="font-bold text-xs text-rose-900 block">
+                                ¿Estás seguro de cancelar tu turno?
+                              </span>
+                              <input
+                                type="text"
+                                value={motivoCancelacion}
+                                onChange={e => setMotivoCancelacion(e.target.value)}
+                                placeholder="Motivo de cancelación (opcional)"
+                                className="w-full text-xs p-2 rounded-lg border border-rose-200 bg-white outline-none focus:border-rose-400"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await portalCancelarTurno({
+                                        p_token: turnoConsultadoActual.manageToken || turnoConsultadoActual.id,
+                                        p_motivo: motivoCancelacion.trim() || 'Cancelado por el paciente desde el portal',
+                                      });
+                                      if (res && res.turno_id) {
+                                        setMostrarModalCancelar(false);
+                                        setMensajeExitoAutogestion('El turno fue cancelado correctamente.');
+                                        setTimeout(() => setMensajeExitoAutogestion(null), 4000);
+                                      }
+                                    } catch (err: any) {
+                                      alert(traducirErrorBase(err?.message || 'error_general'));
+                                    }
+                                  }}
+                                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+                                >
+                                  Confirmar Cancelación
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMostrarModalCancelar(false)}
+                                  className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                                >
+                                  Volver
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Interfaz de Reprogramación similar al Paso 2 */}
+                          {modoReprogramar && (
+                            <div className="p-3.5 bg-white border border-amber-300 rounded-2xl space-y-3.5 shadow-2xs">
+                              <div className="flex items-center justify-between pb-2 border-b border-amber-100">
+                                <div>
+                                  <span className="font-bold text-xs text-slate-900 block">
+                                    Elegí nueva fecha y horario
+                                  </span>
+                                  <span className="text-[11px] text-slate-500">
+                                    Basado en los turnos disponibles en la agenda
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                  Reprogramación
+                                </span>
+                              </div>
+
+                              {diasDisponiblesReprog.length > 0 ? (
+                                <>
+                                  {/* Tira Horizontal de Días */}
+                                  <div className="overflow-x-auto pb-1.5 scrollbar-none">
+                                    <div className="flex gap-2 min-w-max">
+                                      {diasDisponiblesReprog.slice(0, 14).map(dia => {
+                                        const isSelected = dia.fecha === fechaReprogramar;
+                                        return (
+                                          <button
+                                            key={dia.fecha}
+                                            type="button"
+                                            onClick={() => {
+                                              setFechaReprogramar(dia.fecha);
+                                              setHuecoReprogramar(null);
+                                            }}
+                                            className={`flex flex-col items-center justify-center min-w-[65px] py-2 px-1.5 rounded-xl border transition-all text-xs cursor-pointer ${
+                                              isSelected
+                                                ? 'bg-amber-600 text-white border-amber-600 shadow-sm font-semibold'
+                                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
+                                            }`}
+                                          >
+                                            <span className="text-[10px] tracking-wider uppercase opacity-85">
+                                              {dia.diaSemanaCorto}
+                                            </span>
+                                            <span className="text-base font-bold my-0.5 tabular-nums">
+                                              {dia.diaNumero}
+                                            </span>
+                                            <span className="text-[10px] opacity-85">
+                                              {dia.mesCorto}
+                                            </span>
+                                            <span className={`text-[9px] mt-1 px-1.5 py-0.2 rounded-full ${
+                                              isSelected ? 'bg-amber-700 text-white' : 'bg-white text-slate-600 border border-slate-200'
+                                            }`}>
+                                              {dia.cantidad} {dia.cantidad === 1 ? 'turno' : 'turnos'}
+                                            </span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  {/* Grilla de Horarios del día seleccionado */}
+                                  {diaReprogObj ? (
+                                    <div className="space-y-3 pt-1">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-semibold text-slate-800">
+                                          {diaReprogObj.fechaLegible}
+                                        </span>
+                                        <span className="text-slate-500 text-[11px]">
+                                          {diaReprogObj.cantidad} disponibles
+                                        </span>
+                                      </div>
+
+                                      {/* Mañana */}
+                                      {huecosReprogManana.length > 0 && (
+                                        <div>
+                                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                            Mañana
+                                          </span>
+                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                            {huecosReprogManana.map((h, idx) => {
+                                              const isSlotSelected = huecoReprogramar?.inicio === h.inicio;
+                                              return (
+                                                <button
+                                                  key={`reprog-m-${h.inicio}-${idx}`}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setHuecoReprogramar(h);
+                                                    if (h.modalidades.length === 1) {
+                                                      setModalidadReprogramar(h.modalidades[0]);
+                                                    } else if (!h.modalidades.includes(modalidadReprogramar)) {
+                                                      setModalidadReprogramar(h.modalidades[0]);
+                                                    }
+                                                    if (h.locationIds && h.locationIds.length > 0) {
+                                                      setSedeReprogramarId(h.locationIds[0]);
+                                                    }
+                                                  }}
+                                                  className={`py-2 px-1.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                                                    isSlotSelected
+                                                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-600/30'
+                                                      : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/40'
+                                                  }`}
+                                                >
+                                                  <span className="font-bold tabular-nums text-xs sm:text-sm">
+                                                    {formatearHora(h.inicio).replace(' hs', '')}
+                                                  </span>
+                                                  <span className={`text-[10px] flex items-center gap-0.5 ${
+                                                    isSlotSelected ? 'text-amber-100' : 'text-slate-500'
+                                                  }`}>
+                                                    {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
+                                                      <>
+                                                        <Video className="w-2.5 h-2.5" /> Videollamada
+                                                      </>
+                                                    ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
+                                                      <>
+                                                        <MapPin className="w-2.5 h-2.5" /> Presencial
+                                                      </>
+                                                    ) : (
+                                                      'Pres./Videollamada'
+                                                    )}
+                                                  </span>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Tarde */}
+                                      {huecosReprogTarde.length > 0 && (
+                                        <div>
+                                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                            Tarde
+                                          </span>
+                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                            {huecosReprogTarde.map((h, idx) => {
+                                              const isSlotSelected = huecoReprogramar?.inicio === h.inicio;
+                                              return (
+                                                <button
+                                                  key={`reprog-t-${h.inicio}-${idx}`}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setHuecoReprogramar(h);
+                                                    if (h.modalidades.length === 1) {
+                                                      setModalidadReprogramar(h.modalidades[0]);
+                                                    } else if (!h.modalidades.includes(modalidadReprogramar)) {
+                                                      setModalidadReprogramar(h.modalidades[0]);
+                                                    }
+                                                    if (h.locationIds && h.locationIds.length > 0) {
+                                                      setSedeReprogramarId(h.locationIds[0]);
+                                                    }
+                                                  }}
+                                                  className={`py-2 px-1.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                                                    isSlotSelected
+                                                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-600/30'
+                                                      : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/40'
+                                                  }`}
+                                                >
+                                                  <span className="font-bold tabular-nums text-xs sm:text-sm">
+                                                    {formatearHora(h.inicio).replace(' hs', '')}
+                                                  </span>
+                                                  <span className={`text-[10px] flex items-center gap-0.5 ${
+                                                    isSlotSelected ? 'text-amber-100' : 'text-slate-500'
+                                                  }`}>
+                                                    {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
+                                                      <>
+                                                        <Video className="w-2.5 h-2.5" /> Videollamada
+                                                      </>
+                                                    ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
+                                                      <>
+                                                        <MapPin className="w-2.5 h-2.5" /> Presencial
+                                                      </>
+                                                    ) : (
+                                                      'Pres./Videollamada'
+                                                    )}
+                                                  </span>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Selector de Modalidad si el horario elegido admite ambas */}
+                                      {huecoReprogramar && huecoReprogramar.modalidades.length > 1 && (
+                                        <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
+                                          <label className="text-[11px] font-bold text-slate-800 block mb-1.5">
+                                            ¿Cómo preferís atenderte?
+                                          </label>
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => setModalidadReprogramar('presencial')}
+                                              className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                                modalidadReprogramar === 'presencial'
+                                                  ? 'bg-white border-amber-600 text-amber-800 shadow-2xs ring-1 ring-amber-500'
+                                                  : 'bg-white/80 text-slate-600 border-slate-200 hover:bg-white'
+                                              }`}
+                                            >
+                                              <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                                              <span>Presencial</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setModalidadReprogramar('videollamada')}
+                                              className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                                modalidadReprogramar === 'videollamada'
+                                                  ? 'bg-white border-emerald-600 text-emerald-800 shadow-2xs ring-1 ring-emerald-500'
+                                                  : 'bg-white/80 text-slate-600 border-slate-200 hover:bg-white'
+                                              }`}
+                                            >
+                                              <Video className="w-3.5 h-3.5 text-emerald-600" />
+                                              <span>Videollamada</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Ubicación Presencial: solo si seleccionó horario y modalidad presencial */}
+                                      {huecoReprogramar && modalidadReprogramar === 'presencial' && (
+                                        <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-xs">
+                                          <div className="flex items-start gap-2">
+                                            <MapPin className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                            <div className="flex-1 min-w-0">
+                                              <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wide block mb-1">
+                                                Consultorio de atención presencial:
+                                              </span>
+
+                                              {/* Dropdown SOLO si hay más de 1 sede para este día y horario */}
+                                              {ubicacionesReprogPresenciales.length > 1 && (
+                                                <select
+                                                  value={consultorioReprogPresencial.id}
+                                                  onChange={e => setSedeReprogramarId(e.target.value)}
+                                                  className="w-full text-xs bg-white border border-slate-300 focus:border-amber-600 rounded-lg p-2 text-slate-800 font-medium shadow-2xs mb-2"
+                                                >
+                                                  {ubicacionesReprogPresenciales.map(loc => (
+                                                    <option key={loc.id} value={loc.id}>
+                                                      {loc.nombre} — {loc.direccion}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              )}
+
+                                              <div>
+                                                <span className="font-bold text-slate-800 block text-xs">
+                                                  {consultorioReprogPresencial.nombre}
+                                                </span>
+                                                <span className="text-slate-600 block text-xs mt-0.5">
+                                                  {consultorioReprogPresencial.direccion}
+                                                </span>
+                                                {consultorioReprogPresencial.indicaciones && (
+                                                  <span className="text-[11px] text-slate-500 italic block mt-1">
+                                                    Indicaciones: {consultorioReprogPresencial.indicaciones}
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {consultorioReprogPresencial.mapsUrl && (
+                                                <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center">
+                                                  <a
+                                                    href={consultorioReprogPresencial.mapsUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline"
+                                                  >
+                                                    <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
+                                                    <span>Ver ubicación en Google Maps</span>
+                                                  </a>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Si es videollamada, aviso informativo */}
+                                      {huecoReprogramar && modalidadReprogramar === 'videollamada' && (
+                                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
+                                          <Video className="w-4 h-4 text-emerald-700 shrink-0" />
+                                          <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl text-xs">
+                                      No hay turnos disponibles para el día seleccionado.
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl text-xs">
+                                  No hay turnos disponibles para reprogramar en la agenda actualmente.
+                                </div>
+                              )}
+
+                              {/* Botón de confirmación */}
+                              <button
+                                type="button"
+                                disabled={!huecoReprogramar}
+                                onClick={async () => {
+                                  if (!huecoReprogramar) return;
+                                  try {
+                                    const holdRes = await portalCrearHold({
+                                      p_ref: professional.slug,
+                                      p_servicio_id: turnoConsultadoActual.serviceId,
+                                      p_inicio: huecoReprogramar.inicio,
+                                      p_modalidad: modalidadReprogramar,
+                                      p_sede_id: modalidadReprogramar === 'presencial' ? (sedeReprogramarId || consultorioReprogPresencial.id) : undefined,
+                                      p_session_id: sessionToken,
+                                    });
+
+                                    const res = await portalReprogramarTurno({
+                                      p_token: turnoConsultadoActual.manageToken || turnoConsultadoActual.id,
+                                      p_hold_id: holdRes.hold_id,
+                                      p_session_id: sessionToken,
+                                    });
+
+                                    if (res && res.turno_id) {
+                                      setModoReprogramar(false);
+                                      setHuecoReprogramar(null);
+                                      setFechaReprogramar('');
+                                      setMensajeExitoAutogestion('¡Turno reprogramado exitosamente!');
+                                      setTimeout(() => setMensajeExitoAutogestion(null), 4000);
+                                    }
+                                  } catch (err: any) {
+                                    alert(traducirErrorBase(err?.message || 'error_general'));
+                                  }
+                                }}
+                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 ${
+                                  huecoReprogramar
+                                    ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Confirmar Cambio de Turno</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                          <span>
+                            {infoTurnoAutogestion?.motivo_no_cancelable ||
+                              `El plazo límite para cancelar o reprogramar online (${infoTurnoAutogestion?.plazo_cancelacion_hs || professional.parametros.plazoCancelacionHoras || 12} hs previas) ha vencido. Por favor contactate por WhatsApp con el consultorio.`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Acciones para el turno consultado */}
                   <div className="pt-1 flex flex-col gap-2">
