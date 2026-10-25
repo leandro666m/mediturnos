@@ -520,14 +520,14 @@ export const PatientPortal: React.FC = () => {
         setFechaReprogramar(diasDisponiblesReprog[0].fecha);
         setHuecoReprogramar(null);
       }
-      if (turnoConsultadoActual) {
+      if (turnoConsultadoActual && !huecoReprogramar) {
         setModalidadReprogramar(turnoConsultadoActual.modalidad);
         if (turnoConsultadoActual.locationId) {
           setSedeReprogramarId(turnoConsultadoActual.locationId);
         }
       }
     }
-  }, [modoReprogramar, diasDisponiblesReprog, fechaReprogramar, turnoConsultadoActual]);
+  }, [modoReprogramar, diasDisponiblesReprog]);
 
   return (
     <div className="min-h-screen bg-slate-50 py-6 px-3 sm:px-6 flex flex-col items-center">
@@ -2056,6 +2056,56 @@ export const PatientPortal: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Ubicación para el turno Presencial */}
+                  {turnoConsultadoActual.modalidad === 'presencial' && (() => {
+                    const locActual =
+                      locations.find(l => l.id === turnoConsultadoActual.locationId) || consultorioPresencial;
+                    return (
+                      <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs">
+                        <div className="flex items-start gap-2.5">
+                          <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
+                              Ubicación de atención presencial:
+                            </span>
+                            <span className="font-bold text-slate-900 block text-xs">
+                              {locActual.nombre}
+                            </span>
+                            <span className="text-slate-600 block text-xs mt-0.5">
+                              {locActual.direccion}
+                            </span>
+                            {locActual.indicaciones && (
+                              <span className="text-[11px] text-slate-500 italic block mt-1">
+                                Indicaciones: {locActual.indicaciones}
+                              </span>
+                            )}
+                            {locActual.mapsUrl && (
+                              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center">
+                                <a
+                                  href={locActual.mapsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                  <span>Ver ubicación en Google Maps</span>
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Aviso para el turno Videollamada (sin ubicación) */}
+                  {turnoConsultadoActual.modalidad === 'videollamada' && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
+                      <Video className="w-4 h-4 text-emerald-700 shrink-0" />
+                      <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
+                    </div>
+                  )}
+
                   {/* Estado del Pago y Comprobante */}
                   <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
                     <div className="flex justify-between items-center">
@@ -2436,7 +2486,15 @@ export const PatientPortal: React.FC = () => {
                                         </div>
                                       )}
 
-                                      {/* Ubicación Presencial: solo si seleccionó horario y modalidad presencial */}
+                                      {/* Si es videollamada: SOLO aviso informativo, NUNCA mostrar ubicación */}
+                                      {huecoReprogramar && modalidadReprogramar === 'videollamada' && (
+                                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
+                                          <Video className="w-4 h-4 text-emerald-700 shrink-0" />
+                                          <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
+                                        </div>
+                                      )}
+
+                                      {/* Ubicación Presencial: SOLO si seleccionó horario y modalidad presencial */}
                                       {huecoReprogramar && modalidadReprogramar === 'presencial' && (
                                         <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-xs">
                                           <div className="flex items-start gap-2">
@@ -2490,14 +2548,6 @@ export const PatientPortal: React.FC = () => {
                                               )}
                                             </div>
                                           </div>
-                                        </div>
-                                      )}
-
-                                      {/* Si es videollamada, aviso informativo */}
-                                      {huecoReprogramar && modalidadReprogramar === 'videollamada' && (
-                                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
-                                          <Video className="w-4 h-4 text-emerald-700 shrink-0" />
-                                          <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
                                         </div>
                                       )}
                                     </div>
