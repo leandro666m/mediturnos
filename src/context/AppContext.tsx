@@ -3,7 +3,6 @@ import {
   ActorCambio,
   Appointment,
   AppointmentHold,
-  ComprobantePago,
   ConsultationNote,
   Coverage,
   EstadoPago,
@@ -102,7 +101,6 @@ interface AppContextType {
     origen: 'portal' | 'dashboard';
     esSobreturno?: boolean;
     estadoPago?: EstadoPago;
-    comprobantePago?: ComprobantePago;
   }) => { success: boolean; appointment?: Appointment; error?: string };
   changeAppointmentStatus: (
     id: string,
@@ -161,15 +159,6 @@ interface AppContextType {
     nuevoInicio: string,
     nuevoFin: string
   ) => { success: boolean; error?: string; newAppointment?: Appointment };
-  uploadPaymentProof: (
-    tokenOrId: string,
-    proof: { url: string; nombreArchivo?: string; montoCentavos: number }
-  ) => { success: boolean; error?: string };
-  reviewPaymentProof: (
-    appointmentId: string,
-    decision: 'aprobado' | 'rechazado',
-    notas?: string
-  ) => { success: boolean; error?: string };
   addCoverage: (nombre: string) => Coverage;
   updateCoverages: (coverages: Coverage[]) => void;
   toggleHolidayLaborable: (holidayId: string) => void;
@@ -689,7 +678,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     origen: 'portal' | 'dashboard';
     esSobreturno?: boolean;
     estadoPago?: EstadoPago;
-    comprobantePago?: ComprobantePago;
   }): { success: boolean; appointment?: Appointment; error?: string } => {
     const srv = services.find(s => s.id === params.serviceId);
     if (!srv) {
@@ -756,7 +744,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       pacienteCobertura: coberturaNombre,
       pacientePlan: params.pacientePlan?.trim(),
       pacienteAfiliado: params.pacienteAfiliado?.trim(),
-      comprobantePago: params.comprobantePago,
     };
 
     setAppointments(prev => [nuevoTurno, ...prev]);
@@ -994,7 +981,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'Estado Turno',
       'Estado Pago',
       'Arancel (ARS)',
-      'Comprobante Digital',
       'Motivo Consulta',
       'Origen',
     ];
@@ -1006,7 +992,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const horaIni = app.inicio.slice(11, 16);
       const horaFin = app.fin.slice(11, 16);
       const arancel = (app.precioCentavos / 100).toFixed(2);
-      const estadoComp = app.comprobantePago ? app.comprobantePago.estado : 'Sin comprobante';
 
       return [
         app.id,
@@ -1025,7 +1010,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         app.estado,
         app.estadoPago,
         arancel,
-        estadoComp,
         `"${(app.motivo || '').replace(/"/g, '""')}"`,
         app.origen,
       ].join('\t');
@@ -1781,72 +1765,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const uploadPaymentProof = (
-    tokenOrId: string,
-    proof: { url: string; nombreArchivo?: string; montoCentavos: number }
-  ): { success: boolean; error?: string } => {
-    const target = appointments.find(a => a.manageToken === tokenOrId || a.id === tokenOrId);
-    if (!target) {
-      return { success: false, error: 'Turno no encontrado.' };
-    }
-
-    const comprobante: ComprobantePago = {
-      url: proof.url,
-      nombreArchivo: proof.nombreArchivo || 'comprobante-transferencia.jpg',
-      subidoEn: new Date().toISOString(),
-      montoCentavos: proof.montoCentavos || target.precioCentavos,
-      estado: 'pendiente_revision',
-    };
-
-    setAppointments(prev =>
-      prev.map(app => {
-        if (app.id === target.id) {
-          return {
-            ...app,
-            comprobantePago: comprobante,
-          };
-        }
-        return app;
-      })
-    );
-
-    return { success: true };
-  };
-
-  const reviewPaymentProof = (
-    appointmentId: string,
-    decision: 'aprobado' | 'rechazado',
-    notas?: string
-  ): { success: boolean; error?: string } => {
-    const target = appointments.find(a => a.id === appointmentId);
-    if (!target || !target.comprobantePago) {
-      return { success: false, error: 'Turno o comprobante no encontrado.' };
-    }
-
-    setAppointments(prev =>
-      prev.map(app => {
-        if (app.id === appointmentId && app.comprobantePago) {
-          return {
-            ...app,
-            estadoPago: decision === 'aprobado' ? 'pagado' : 'sin_pago',
-            comprobantePago: {
-              ...app.comprobantePago,
-              estado: decision,
-              notasRevision:
-                notas ||
-                (decision === 'aprobado'
-                  ? 'Comprobante verificado y aprobado por el profesional.'
-                  : 'Comprobante no válido o ilegible.'),
-            },
-          };
-        }
-        return app;
-      })
-    );
-
-    return { success: true };
-  };
-
   const addCoverage = (nombre: string): Coverage => {
     const trimmed = nombre.trim();
     const id = 'cov_' + Math.random().toString(36).slice(2, 9);
@@ -2132,8 +2050,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         findAppointmentByManageToken,
         cancelAppointmentByPatient,
         rescheduleAppointmentByPatient,
-        uploadPaymentProof,
-        reviewPaymentProof,
         addCoverage,
         updateCoverages,
         toggleHolidayLaborable,

@@ -120,15 +120,6 @@ export interface AppointmentStatusHistory {
   motivo?: string;
 }
 
-export interface ComprobantePago {
-  url: string; // base64 data url o enlace
-  nombreArchivo?: string;
-  subidoEn: string;
-  montoCentavos: number;
-  estado: 'pendiente_revision' | 'aprobado' | 'rechazado';
-  notasRevision?: string;
-}
-
 export interface Appointment {
   id: string;
   professionalId: string;
@@ -158,8 +149,6 @@ export interface Appointment {
   pacienteCobertura: string;
   pacientePlan?: string;
   pacienteAfiliado?: string;
-  // Pagos y comprobantes digitales (Hito 2)
-  comprobantePago?: ComprobantePago;
 }
 
 export interface AppointmentHold {

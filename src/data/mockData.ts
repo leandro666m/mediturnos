@@ -429,16 +429,8 @@ export function generarTurnosIniciales(baseDate: Date = new Date()): Appointment
       pacienteCobertura: 'Swiss Medical',
       pacientePlan: 'SMG 02',
       pacienteAfiliado: '8902144',
-      comprobantePago: {
-        url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80',
-        nombreArchivo: 'comprobante-mp-juan-manuel.jpg',
-        subidoEn: '2026-10-11T16:00:00Z',
-        montoCentavos: 2200000,
-        estado: 'aprobado',
-        notasRevision: 'Comprobante verificado y acreditado en cuenta bancaria.',
-      },
     },
-    // 3. Turno de HOY: 15:00 hs (Pendiente, sin pago - con comprobante digital por revisar)
+    // 3. Turno de HOY: 15:00 hs (Pendiente, sin pago)
     {
       id: 'app-03',
       professionalId: 'prof-martin-benitez',
@@ -462,13 +454,6 @@ export function generarTurnosIniciales(baseDate: Date = new Date()): Appointment
       pacienteCobertura: 'Galeno Plata',
       pacientePlan: 'Plata',
       pacienteAfiliado: '33019284',
-      comprobantePago: {
-        url: 'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=600&q=80',
-        nombreArchivo: 'transferencia-banco-galicia.jpg',
-        subidoEn: '2026-10-12T09:30:00Z',
-        montoCentavos: 3500000,
-        estado: 'pendiente_revision',
-      },
     },
     // 4. Turno de HOY: 17:30 hs (Videollamada, Pendiente, sin pago)
     {

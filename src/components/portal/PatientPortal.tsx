@@ -26,7 +26,6 @@ import {
   Copy,
   Search,
   FileText,
-  UploadCloud,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { usePWAInstall } from '../../modules/usePWAInstall';
@@ -64,7 +63,6 @@ export const PatientPortal: React.FC = () => {
     createHold,
     releaseHold,
     bookAppointment,
-    uploadPaymentProof,
     portalCrearHold,
     portalConfirmarTurno,
     portalVerTurno,
@@ -138,9 +136,6 @@ export const PatientPortal: React.FC = () => {
   // Estados de Pagos Digitales (Hito 2 - Arancel Completo)
   const [copiadoAlias, setCopiadoAlias] = useState(false);
   const [copiadoCbu, setCopiadoCbu] = useState(false);
-  const [previewComprobante, setPreviewComprobante] = useState<string | null>(null);
-  const [nombreArchivoSubido, setNombreArchivoSubido] = useState<string>('comprobante-transferencia.jpg');
-  const [feedbackComprobantePaciente, setFeedbackComprobantePaciente] = useState<string | null>(null);
 
   // Modal para consultar / autogestión de turnos reservados (Soporta búsqueda por DNI o Manage Token)
   const [modalConsultarTurno, setModalConsultarTurno] = useState(false);
@@ -727,7 +722,7 @@ export const PatientPortal: React.FC = () => {
             ))}
           </div>
 
-          {/* Fila de acción rápida: Consultar turno reservado o subir comprobante */}
+          {/* Fila de acción rápida: Consultar turno reservado */}
           <div className="mt-3.5 pt-3 border-t border-sky-700/60 flex items-center justify-between gap-3 flex-wrap">
             <span className="text-xs text-sky-100/90 font-medium">
               ¿Ya tenés un turno reservado?
@@ -1546,7 +1541,7 @@ export const PatientPortal: React.FC = () => {
                   </div>
 
                   {/* ========================================================
-                      HITO 2: PAGO DE ARANCEL COMPLETO & COMPROBANTE DIGITAL
+                      DATOS DE TRANSFERENCIA Y ARANCEL COMPLETO
                      ======================================================== */}
                   <div className="mt-5 bg-gradient-to-br from-emerald-50/70 to-teal-50/50 border border-emerald-200/90 rounded-2xl p-4 sm:p-5 text-left shadow-2xs space-y-4">
                     <div className="flex items-start justify-between gap-3 pb-3 border-b border-emerald-200/70">
@@ -1630,171 +1625,6 @@ export const PatientPortal: React.FC = () => {
                         <span><strong>CUIT:</strong> {professional.cuit || '20-33894210-9'}</span>
                       </div>
                     </div>
-
-                    {/* Estado del Comprobante si ya fue enviado */}
-                    {turnoConfirmadoActual.comprobantePago ? (
-                      <div className="p-3.5 rounded-xl border text-xs space-y-2 bg-white">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {turnoConfirmadoActual.comprobantePago.estado === 'pendiente_revision' && (
-                              <Clock className="w-4 h-4 text-amber-500 animate-pulse" />
-                            )}
-                            {turnoConfirmadoActual.comprobantePago.estado === 'aprobado' && (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            )}
-                            {turnoConfirmadoActual.comprobantePago.estado === 'rechazado' && (
-                              <AlertCircle className="w-4 h-4 text-rose-600" />
-                            )}
-                            <span className="font-bold text-slate-900">
-                              {turnoConfirmadoActual.comprobantePago.estado === 'pendiente_revision'
-                                ? 'Comprobante recibido — Pendiente de verificación'
-                                : turnoConfirmadoActual.comprobantePago.estado === 'aprobado'
-                                ? '¡Pago Aprobado y Acreditado!'
-                                : 'Comprobante observado'}
-                            </span>
-                          </div>
-
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            turnoConfirmadoActual.comprobantePago.estado === 'pendiente_revision'
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : turnoConfirmadoActual.comprobantePago.estado === 'aprobado'
-                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                              : 'bg-rose-100 text-rose-900 border border-rose-300'
-                          }`}>
-                            {turnoConfirmadoActual.comprobantePago.estado === 'pendiente_revision'
-                              ? 'En revisión'
-                              : turnoConfirmadoActual.comprobantePago.estado === 'aprobado'
-                              ? 'Aprobado ✓'
-                              : 'Observado'}
-                          </span>
-                        </div>
-
-                        <p className="text-[11px] text-slate-600">
-                          {turnoConfirmadoActual.comprobantePago.estado === 'pendiente_revision' &&
-                            'Tu comprobante por el arancel completo fue recibido exitosamente. El profesional verificará el impacto bancario y te confirmará por WhatsApp.'}
-                          {turnoConfirmadoActual.comprobantePago.estado === 'aprobado' &&
-                            'El profesional verificó tu transferencia bancaria. Tu turno se encuentra 100% coordinado y pagado.'}
-                          {turnoConfirmadoActual.comprobantePago.estado === 'rechazado' &&
-                            `Observación del consultorio: "${turnoConfirmadoActual.comprobantePago.notasRevision || 'Comprobante no válido'}". Por favor subí un nuevo comprobante abajo.`}
-                        </p>
-
-                        {turnoConfirmadoActual.comprobantePago.url && (
-                          <div className="pt-1 flex items-center gap-2">
-                            <img
-                              src={turnoConfirmadoActual.comprobantePago.url}
-                              alt="Comprobante"
-                              className="w-14 h-14 object-cover rounded-lg border border-slate-200 shadow-2xs"
-                            />
-                            <div className="text-[11px] text-slate-500 font-mono">
-                              <div>{turnoConfirmadoActual.comprobantePago.nombreArchivo || 'comprobante.jpg'}</div>
-                              <div className="text-[10px] text-slate-400">
-                                Importe: {formatearMoneda(turnoConfirmadoActual.comprobantePago.montoCentavos)}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      /* Formulario para Subir Comprobante */
-                      <div className="bg-white rounded-xl p-3.5 border border-emerald-200/80 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                            <UploadCloud className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Adjuntar Comprobante de Transferencia</span>
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            JPG, PNG o PDF
-                          </span>
-                        </div>
-
-                        {feedbackComprobantePaciente && (
-                          <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-lg flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>{feedbackComprobantePaciente}</span>
-                          </div>
-                        )}
-
-                        <div className="border border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-emerald-500 transition-colors bg-slate-50/50">
-                          <input
-                            type="file"
-                            id="paciente-comprobante-input"
-                            accept="image/*,.pdf"
-                            onChange={e => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                setNombreArchivoSubido(file.name);
-                                const reader = new FileReader();
-                                reader.onload = ev => {
-                                  setPreviewComprobante(ev.target?.result as string);
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                            className="hidden"
-                          />
-                          <label
-                            htmlFor="paciente-comprobante-input"
-                            className="cursor-pointer flex flex-col items-center justify-center gap-1.5"
-                          >
-                            <CreditCard className="w-6 h-6 text-emerald-600" />
-                            <span className="text-xs font-bold text-emerald-700">
-                              Tocá acá para seleccionar tu comprobante
-                            </span>
-                            <span className="text-[11px] text-slate-500">
-                              Foto del ticket o captura de pantalla de la transferencia
-                            </span>
-                          </label>
-                        </div>
-
-                        {previewComprobante && (
-                          <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 truncate">
-                              <img
-                                src={previewComprobante}
-                                alt="Preview"
-                                className="w-12 h-12 object-cover rounded border border-slate-200 shrink-0"
-                              />
-                              <div className="truncate text-xs">
-                                <span className="font-bold text-slate-800 block truncate">{nombreArchivoSubido}</span>
-                                <span className="text-[11px] text-emerald-700 font-semibold">Listo para enviar</span>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewComprobante(null);
-                              }}
-                              className="text-slate-400 hover:text-slate-600 p-1 text-xs"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          disabled={!previewComprobante}
-                          onClick={() => {
-                            if (!previewComprobante) return;
-                            uploadPaymentProof(turnoConfirmadoActual.id, {
-                              url: previewComprobante,
-                              nombreArchivo: nombreArchivoSubido,
-                              montoCentavos: turnoConfirmadoActual.precioCentavos,
-                            });
-                            setFeedbackComprobantePaciente('¡Comprobante enviado al consultorio con éxito!');
-                            setPreviewComprobante(null);
-                          }}
-                          className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm ${
-                            previewComprobante
-                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-emerald-600/30'
-                              : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                          }`}
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Enviar Comprobante al Consultorio</span>
-                        </button>
-                      </div>
-                    )}
                   </div>
 
                   {/* Acciones de WhatsApp y Calendario */}
@@ -1944,7 +1774,7 @@ export const PatientPortal: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL CONSULTAR TURNO Y SUBIR COMPROBANTE (Hito 2 - Autogestión) */}
+      {/* MODAL CONSULTAR TURNO (Autogestión de Pacientes) */}
       {modalConsultarTurno && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 my-8 animate-in fade-in zoom-in-95 duration-150">
@@ -1960,7 +1790,7 @@ export const PatientPortal: React.FC = () => {
                     Consultar mi Turno
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Verificá tu reserva y enviá tu comprobante de pago
+                    Verificá tu reserva y gestioná tus turnos
                   </p>
                 </div>
               </div>
@@ -2129,7 +1959,7 @@ export const PatientPortal: React.FC = () => {
                   ) : (
                     <div className="space-y-4">
                       {/* Cabecera informativa de los turnos en el horizonte */}
-                      <div className="bg-sky-50/70 border border-sky-200 rounded-2xl p-3.5 space-y-2 text-xs">
+                      <div className="bg-sky-50/70 border border-sky-200 rounded-2xl p-3.5 text-xs">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <span className="text-[11px] font-bold text-sky-900 uppercase tracking-wider block">
@@ -2141,13 +1971,6 @@ export const PatientPortal: React.FC = () => {
                           </div>
                           <span className="px-3 py-1 bg-sky-600 text-white rounded-full text-xs font-bold shadow-2xs">
                             {turnosConsultados.length} {turnosConsultados.length === 1 ? 'turno reservado' : 'turnos reservados'}
-                          </span>
-                        </div>
-
-                        <div className="pt-2 border-t border-sky-100 flex items-start gap-1.5 text-[11px] text-sky-900/90 leading-relaxed">
-                          <Info className="w-3.5 h-3.5 text-sky-700 shrink-0 mt-0.5" />
-                          <span>
-                            Turnos en el <strong>Horizonte máximo de reserva ({horizonteDias} días)</strong>. Únicamente el <strong>último turno agendado en estado Pendiente</strong> es reprogramable online.
                           </span>
                         </div>
                       </div>
@@ -2284,85 +2107,16 @@ export const PatientPortal: React.FC = () => {
                                 </div>
                               )}
 
-                              {/* Estado del Pago y Comprobante */}
-                              <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-bold text-slate-800">Estado del Pago:</span>
-                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                    appt.estadoPago === 'pagado'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {appt.estadoPago === 'pagado' ? 'PAGADO ✓' : 'PENDIENTE DE PAGO'}
-                                  </span>
-                                </div>
-
-                                {appt.comprobantePago ? (
-                                  <div className="pt-2 border-t border-slate-100 text-[11px]">
-                                    <div className="flex items-center justify-between font-semibold">
-                                      <span>Comprobante Digital:</span>
-                                      <span className={`${
-                                        appt.comprobantePago.estado === 'aprobado'
-                                          ? 'text-emerald-700'
-                                          : appt.comprobantePago.estado === 'pendiente_revision'
-                                          ? 'text-amber-700'
-                                          : 'text-rose-700'
-                                      }`}>
-                                        {appt.comprobantePago.estado === 'aprobado'
-                                          ? 'Aprobado ✓'
-                                          : appt.comprobantePago.estado === 'pendiente_revision'
-                                          ? 'En revisión...'
-                                          : 'Observado ✗'}
-                                      </span>
-                                    </div>
-                                    {appt.comprobantePago.notasRevision && (
-                                      <div className="text-slate-500 italic mt-1">
-                                        «{appt.comprobantePago.notasRevision}»
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-600 space-y-2">
-                                    <p>
-                                      No registrás comprobante cargado. Podés transferir con alias <strong>{professional.aliasCobro}</strong> y subir tu comprobante acá:
-                                    </p>
-                                    <div className="border border-dashed border-emerald-300 rounded-xl p-3 text-center bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
-                                      <input
-                                        type="file"
-                                        id={`consulta-comprobante-${appt.id}`}
-                                        accept="image/*,.pdf"
-                                        onChange={e => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = ev => {
-                                              const url = ev.target?.result as string;
-                                              uploadPaymentProof(appt.id, {
-                                                url,
-                                                nombreArchivo: file.name,
-                                                montoCentavos: appt.precioCentavos,
-                                              });
-                                            };
-                                            reader.readAsDataURL(file);
-                                          }
-                                        }}
-                                        className="hidden"
-                                      />
-                                      <label
-                                        htmlFor={`consulta-comprobante-${appt.id}`}
-                                        className="cursor-pointer flex flex-col items-center justify-center gap-1"
-                                      >
-                                        <UploadCloud className="w-5 h-5 text-emerald-600" />
-                                        <span className="font-bold text-emerald-800 text-xs">
-                                          Adjuntar comprobante para este turno
-                                        </span>
-                                        <span className="text-[10px] text-slate-500">
-                                          Foto o captura de pantalla (JPG, PNG o PDF)
-                                        </span>
-                                      </label>
-                                    </div>
-                                  </div>
-                                )}
+                              {/* Estado del Pago */}
+                              <div className="p-3 bg-white rounded-xl border border-slate-200 flex justify-between items-center">
+                                <span className="font-bold text-slate-800">Estado del Pago:</span>
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  appt.estadoPago === 'pagado'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {appt.estadoPago === 'pagado' ? 'PAGADO ✓' : 'PENDIENTE DE PAGO'}
+                                </span>
                               </div>
 
                               {/* Autogestión de Turno: Cancelar / Reprogramar según regla de último turno y estado Pendiente */}

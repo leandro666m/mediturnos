@@ -56,11 +56,6 @@ export const MetricasTab: React.FC = () => {
     const turnosSinPago = turnosFiltrados.filter(a => a.estadoPago === 'sin_pago' && a.estado !== 'cancelado');
     const totalPendienteCobroCentavos = turnosSinPago.reduce((sum, a) => sum + (a.precioCentavos || 0), 0);
 
-    // Comprobantes de pago digitales
-    const conComprobante = turnosFiltrados.filter(a => a.comprobantePago);
-    const comprobantesPendientes = conComprobante.filter(a => a.comprobantePago?.estado === 'pendiente_revision').length;
-    const comprobantesAprobados = conComprobante.filter(a => a.comprobantePago?.estado === 'aprobado').length;
-
     // Desglose por Modalidad
     const presenciales = turnosFiltrados.filter(a => a.modalidad === 'presencial').length;
     const videollamadas = turnosFiltrados.filter(a => a.modalidad === 'videollamada').length;
@@ -104,8 +99,6 @@ export const MetricasTab: React.FC = () => {
       tasaAsistencia,
       totalRecaudadoCentavos,
       totalPendienteCobroCentavos,
-      comprobantesPendientes,
-      comprobantesAprobados,
       presenciales,
       videollamadas,
       rankingCoberturas,
@@ -252,7 +245,7 @@ export const MetricasTab: React.FC = () => {
         </div>
       </div>
 
-      {/* BLOQUE DE PAGOS DIGITALES Y COMPROBANTES */}
+      {/* BLOQUE DE DATOS DE COBRO Y ARANCELES */}
       <div className="bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-200/80 rounded-2xl p-5 shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -261,23 +254,11 @@ export const MetricasTab: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                Pagos Digitales & Comprobantes de Transferencia
+                Canal de Cobro y Transferencia Bancaria
               </h3>
               <p className="text-xs text-slate-600 mt-0.5">
-                Los pacientes pueden abonar el arancel completo y subir su comprobante digital desde el portal o enlace de autogestión.
+                Datos de cuenta informados a los pacientes para abonar el arancel de las consultas.
               </p>
-              <div className="flex flex-wrap items-center gap-3 mt-2 text-xs font-semibold">
-                <span className="text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                  {metricas.comprobantesAprobados} comprobantes aprobados
-                </span>
-                <span className={`px-2.5 py-0.5 rounded-lg border ${
-                  metricas.comprobantesPendientes > 0
-                    ? 'text-amber-900 bg-amber-100 border-amber-300 animate-pulse'
-                    : 'text-slate-600 bg-white border-slate-200'
-                }`}>
-                  {metricas.comprobantesPendientes} pendientes de revisión
-                </span>
-              </div>
             </div>
           </div>
 

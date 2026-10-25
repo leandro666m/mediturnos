@@ -1,289 +1,1212 @@
 -- ============================================================================
--- PROYECTO: MEDITURNOS — ESQUEMA DE BASE DE DATOS RELACIONAL
--- Motor: PostgreSQL 14+ / ANSI SQL
--- Compatibilidad: pgAdmin 4, MySQL Workbench (Ingeniería Inversa / DDL), DBeaver, DataGrip
+-- PROYECTO: MEDITURNOS — ESQUEMA COMPLETO Y ACTUALIZADO PARA SUPABASE (POSTGRESQL 15+)
+-- Arquitectura: Multi-tenant por profesional (id = auth.uid())
+-- Seguridad: Row Level Security (RLS) estricto + Funciones SECURITY DEFINER para el portal público
+-- Integración: Supabase Auth, PostgreSQL Storage Buckets, Triggers de Auditoría y Control Clínico
 -- ============================================================================
 
--- Extensión para generación de identificadores únicos universales (UUIDv4)
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- ============================================================================
+-- MIGRACIÓN 1/7 · EXTENSIONES, TIPOS Y UTILIDADES
+-- ============================================================================
 
--- ----------------------------------------------------------------------------
--- 1. TIPOS ENUMERADOS (ENUMS)
--- ----------------------------------------------------------------------------
+-- Extensión para restricciones de exclusión con tipos escalares (GIST)
+create extension if not exists btree_gist with schema extensions;
+create extension if not exists "uuid-ossp";
 
-DO $$ BEGIN
-    CREATE TYPE modalidad_atencion AS ENUM ('presencial', 'videollamada', 'ambas');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
+-- Tipos enumerados
+do $$ begin
+  create type public.modalidad_atencion as enum ('presencial', 'videollamada', 'ambas');
+exception when duplicate_object then null; end $$;
 
-DO $$ BEGIN
-    CREATE TYPE estado_turno AS ENUM ('pendiente', 'atendido', 'ausente', 'cancelado', 'reprogramado');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
+do $$ begin
+  create type public.estado_turno as enum ('pendiente', 'atendido', 'ausente', 'cancelado', 'reprogramado');
+exception when duplicate_object then null; end $$;
 
-DO $$ BEGIN
-    CREATE TYPE estado_pago AS ENUM ('pendiente', 'pagado', 'exento');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
+do $$ begin
+  create type public.estado_pago as enum ('pendiente', 'pagado', 'exento');
+exception when duplicate_object then null; end $$;
 
-DO $$ BEGIN
-    CREATE TYPE canal_mensaje AS ENUM ('whatsapp', 'email', 'sms');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
+do $$ begin
+  create type public.canal_mensaje as enum ('whatsapp', 'email', 'sms');
+exception when duplicate_object then null; end $$;
 
-DO $$ BEGIN
-    CREATE TYPE tipo_plantilla AS ENUM ('confirmacion', 'recordatorio', 'reprogramacion', 'cancelacion');
-EXCEPTION
-    WHEN duplicate_object THEN NULL;
-END $$;
+do $$ begin
+  create type public.tipo_plantilla as enum ('confirmacion', 'recordatorio', 'reprogramacion', 'cancelacion');
+exception when duplicate_object then null; end $$;
 
--- ----------------------------------------------------------------------------
--- 2. TABLA: profesionales
--- Entidad central de los médicos o especialistas de salud independientes
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS profesionales (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    slug VARCHAR(100) NOT NULL UNIQUE,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    nombre VARCHAR(100) NOT NULL,
-    apellido VARCHAR(100) NOT NULL,
-    titulo VARCHAR(100) NOT NULL DEFAULT 'Licenciado en Kinesiología',
-    especialidad VARCHAR(100) NOT NULL DEFAULT 'Kinesiología y Fisiatría',
-    matricula_nacional VARCHAR(50),
-    matricula_provincial VARCHAR(50),
-    telefono_contacto VARCHAR(50),
-    cbu_cvu VARCHAR(22),
-    alias_mp VARCHAR(50),
-    titular_cuenta VARCHAR(150),
-    agenda_pausada BOOLEAN NOT NULL DEFAULT FALSE,
-    intervalo_turnos_min INT NOT NULL DEFAULT 30 CHECK (intervalo_turnos_min > 0),
-    anticipacion_minima_hs INT NOT NULL DEFAULT 2 CHECK (anticipacion_minima_hs >= 0),
-    horizonte_maximo_dias INT NOT NULL DEFAULT 30 CHECK (horizonte_maximo_dias > 0),
-    margen_entre_turnos_min INT NOT NULL DEFAULT 0 CHECK (margen_entre_turnos_min >= 0),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+do $$ begin
+  create type public.tipo_ausencia as enum ('vacaciones', 'bloqueo');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.tipo_cobertura as enum ('obra_social', 'prepaga', 'particular', 'otro');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.origen_turno as enum ('portal', 'dashboard');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type public.actor_cambio as enum ('paciente', 'profesional', 'sistema');
+exception when duplicate_object then null; end $$;
+
+-- Función utilitaria para actualización automática de updated_at
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+
+-- ============================================================================
+-- MIGRACIÓN 2/7 · PROFESIONALES Y CONFIGURACIÓN DE AGENDA
+-- ============================================================================
+
+-- 1. profesionales: una fila por usuario de Supabase Auth (id = auth.uid()).
+create table if not exists public.profesionales (
+  id                      uuid primary key references auth.users (id) on delete cascade,
+  slug                    text not null,
+  public_id               text not null default substr(replace(gen_random_uuid()::text, '-', ''), 1, 12),
+  email                   text not null,
+  nombre                  text not null,      -- nombre completo en un solo campo (coincide con el frontend)
+  titulo                  text not null,
+  especialidad            text not null,
+  matricula_nacional      text,
+  matricula_provincial    text,
+  telefono_contacto       text,               -- PRIVADO: nunca se expone al paciente
+  cbu_cvu                 text,
+  alias_mp                text,
+  titular_cuenta          text,
+  cuit                    text,
+  banco                   text,
+  foto_perfil_path        text,               -- ruta en Supabase Storage (fotos-perfil)
+  tamano_texto            text not null default 'predeterminado',
+  zona_horaria            text not null default 'America/Argentina/Buenos_Aires',
+  agenda_pausada          boolean not null default false,
+  intervalo_turnos_min    int  not null default 30,
+  anticipacion_minima_hs  int  not null default 2,
+  horizonte_maximo_dias   int  not null default 30,
+  margen_entre_turnos_min int  not null default 0,
+  plazo_cancelacion_hs    int  not null default 24,   -- horas de anticipación mínimas para cancelar o reprogramar
+  horario_silencio_inicio time not null default '22:00',
+  horario_silencio_fin    time not null default '08:00',
+  created_at              timestamptz not null default now(),
+  updated_at              timestamptz not null default now(),
+
+  constraint profesionales_slug_uq      unique (slug),
+  constraint profesionales_public_id_uq unique (public_id),
+  constraint profesionales_email_uq     unique (email),
+  constraint profesionales_slug_fmt     check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(slug) between 3 and 100),
+  constraint profesionales_slug_reservado check (slug <> all (array[
+    'app','api','login','logout','registro','admin','auth','_next','public','static','assets','sw','manifest','portal','turno'])),
+  constraint profesionales_tel_e164     check (telefono_contacto is null or telefono_contacto ~ '^\+[1-9][0-9]{7,14}$'),
+  constraint profesionales_cbu_fmt      check (cbu_cvu is null or cbu_cvu ~ '^[0-9]{22}$'),
+  constraint profesionales_tamano_texto check (tamano_texto in ('minimo', 'predeterminado', 'grande')),
+  constraint profesionales_intervalo    check (intervalo_turnos_min in (15, 20, 30, 45, 60)),
+  constraint profesionales_anticipacion check (anticipacion_minima_hs >= 0),
+  constraint profesionales_horizonte    check (horizonte_maximo_dias between 1 and 365),
+  constraint profesionales_margen       check (margen_entre_turnos_min >= 0),
+  constraint profesionales_plazo_cancel check (plazo_cancelacion_hs >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_profesionales_slug ON profesionales(slug);
-CREATE INDEX IF NOT EXISTS idx_profesionales_email ON profesionales(email);
+create index if not exists idx_profesionales_slug on public.profesionales (slug);
+create index if not exists idx_profesionales_public_id on public.profesionales (public_id);
 
--- ----------------------------------------------------------------------------
--- 3. TABLA: servicios
--- Catálogo de prestaciones que ofrece el profesional con sus aranceles y duraciones
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS servicios (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    nombre VARCHAR(150) NOT NULL,
-    descripcion TEXT,
-    duracion_min INT NOT NULL DEFAULT 30 CHECK (duracion_min > 0),
-    arancel_centavos BIGINT NOT NULL DEFAULT 0 CHECK (arancel_centavos >= 0),
-    moneda VARCHAR(3) NOT NULL DEFAULT 'ARS',
-    modalidad modalidad_atencion NOT NULL DEFAULT 'ambas',
-    activo BOOLEAN NOT NULL DEFAULT TRUE,
-    orden INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- 2. sedes (consultorios físicos)
+create table if not exists public.sedes (
+  id              uuid primary key default gen_random_uuid(),
+  profesional_id  uuid not null references public.profesionales (id) on delete cascade,
+  nombre          text not null,
+  direccion       text not null,
+  indicaciones    text,
+  maps_url        text,
+  activa          boolean not null default true,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint sedes_id_prof_uq unique (id, profesional_id)
+);
+create index if not exists idx_sedes_profesional on public.sedes (profesional_id);
+
+-- 3. coberturas (obras sociales / prepagas). Si un paciente tiene cobertura_id = NULL se considera Particular.
+create table if not exists public.coberturas (
+  id              uuid primary key default gen_random_uuid(),
+  profesional_id  uuid not null references public.profesionales (id) on delete cascade,
+  nombre          text not null,
+  tipo            public.tipo_cobertura not null default 'obra_social',
+  created_at      timestamptz not null default now(),
+  constraint coberturas_id_prof_uq unique (id, profesional_id),
+  constraint coberturas_nombre_uq  unique (profesional_id, nombre)
+);
+create index if not exists idx_coberturas_profesional on public.coberturas (profesional_id);
+
+-- 4. servicios (catálogo de prestaciones médicas)
+create table if not exists public.servicios (
+  id               uuid primary key default gen_random_uuid(),
+  profesional_id   uuid not null references public.profesionales (id) on delete cascade,
+  nombre           text not null,
+  descripcion      text,
+  duracion_min     int  not null,
+  arancel_centavos bigint not null default 0,
+  mostrar_precio   boolean not null default true,
+  moneda           char(3) not null default 'ARS',
+  modalidad        public.modalidad_atencion not null,
+  orden            int not null default 0,
+  activo           boolean not null default true,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  constraint servicios_id_prof_uq unique (id, profesional_id),
+  constraint servicios_duracion   check (duracion_min between 5 and 480),
+  constraint servicios_arancel    check (arancel_centavos >= 0)
+);
+create index if not exists idx_servicios_profesional on public.servicios (profesional_id, activo);
+
+-- 5. franjas_horarias (días y bloques de atención)
+create table if not exists public.franjas_horarias (
+  id                  uuid primary key default gen_random_uuid(),
+  profesional_id      uuid not null references public.profesionales (id) on delete cascade,
+  sede_id             uuid,
+  dia_semana          smallint not null,                 -- 1 = lunes ... 7 = domingo
+  hora_inicio         time not null,
+  hora_fin            time not null,
+  modalidad_permitida public.modalidad_atencion not null,
+  activo              boolean not null default true,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint franjas_id_prof_uq unique (id, profesional_id),
+  constraint franjas_dia        check (dia_semana between 1 and 7),
+  constraint franjas_horas      check (hora_inicio < hora_fin),
+  constraint franjas_sede_fk    foreign key (sede_id, profesional_id)
+    references public.sedes (id, profesional_id) on delete set null (sede_id),
+  constraint franjas_sin_solapamiento exclude using gist (
+    profesional_id with =,
+    dia_semana with =,
+    tsrange(date '2000-01-01' + hora_inicio, date '2000-01-01' + hora_fin) with &&
+  ) where (activo)
+);
+create index if not exists idx_franjas_profesional on public.franjas_horarias (profesional_id, dia_semana);
+
+-- 6. descansos_horarios (almuerzos / pausas dentro de cada franja)
+create table if not exists public.descansos_horarios (
+  id              uuid primary key default gen_random_uuid(),
+  franja_id       uuid not null,
+  profesional_id  uuid not null,
+  hora_inicio     time not null,
+  hora_fin        time not null,
+  constraint descansos_horas    check (hora_inicio < hora_fin),
+  constraint descansos_franja_fk foreign key (franja_id, profesional_id)
+    references public.franjas_horarias (id, profesional_id) on delete cascade
+);
+create index if not exists idx_descansos_franja on public.descansos_horarios (franja_id);
+
+-- 7. ausencias (vacaciones, congresos, bloqueos de agenda en UTC)
+create table if not exists public.ausencias (
+  id              uuid primary key default gen_random_uuid(),
+  profesional_id  uuid not null references public.profesionales (id) on delete cascade,
+  tipo            public.tipo_ausencia not null,
+  inicio_utc      timestamptz not null,
+  fin_utc         timestamptz not null,
+  motivo          text,
+  created_at      timestamptz not null default now(),
+  constraint ausencias_rango check (inicio_utc < fin_utc)
+);
+create index if not exists idx_ausencias_profesional on public.ausencias (profesional_id, inicio_utc);
+
+-- 8. feriados_profesional: configuración específica del profesional sobre feriados
+create table if not exists public.feriados_profesional (
+  id              uuid primary key default gen_random_uuid(),
+  profesional_id  uuid not null references public.profesionales (id) on delete cascade,
+  fecha           date not null,
+  nombre          text not null,
+  laborable       boolean not null,
+  constraint feriados_prof_fecha_uq unique (profesional_id, fecha)
+);
+create index if not exists idx_feriados_profesional on public.feriados_profesional (profesional_id, fecha);
+
+-- 9. plantillas_mensajes: comunicación por WhatsApp / Email
+create table if not exists public.plantillas_mensajes (
+  id                  uuid primary key default gen_random_uuid(),
+  profesional_id      uuid not null references public.profesionales (id) on delete cascade,
+  tipo_mensaje        public.tipo_plantilla not null,
+  canal               public.canal_mensaje not null default 'whatsapp',
+  titulo              text,
+  cuerpo_plantilla    text not null,
+  bloque_presencial   text,     -- texto que se agrega si el turno es presencial
+  bloque_videollamada text,     -- texto que se agrega si el turno es por videollamada
+  activo              boolean not null default true,
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now(),
+  constraint plantillas_prof_tipo_canal_uq unique (profesional_id, tipo_mensaje, canal)
 );
 
-CREATE INDEX IF NOT EXISTS idx_servicios_profesional ON servicios(profesional_id, activo);
 
--- ----------------------------------------------------------------------------
--- 4. TABLA: franjas_horarias
--- Horarios recurrentes semanales de atención configurados por el profesional
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS franjas_horarias (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    dia_semana SMALLINT NOT NULL CHECK (dia_semana BETWEEN 1 AND 7), -- 1: Lunes, ..., 7: Domingo
-    hora_inicio TIME NOT NULL,
-    hora_fin TIME NOT NULL,
-    modalidad_permitida modalidad_atencion NOT NULL DEFAULT 'ambas',
-    activo BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT check_orden_horas CHECK (hora_inicio < hora_fin)
+-- ============================================================================
+-- MIGRACIÓN 3/7 · PACIENTES, TURNOS, HOLDS, HISTORIA CLÍNICA Y AUDITORÍA
+-- ============================================================================
+
+-- 10. pacientes
+create table if not exists public.pacientes (
+  id                    uuid primary key default gen_random_uuid(),
+  profesional_id        uuid not null references public.profesionales (id) on delete cascade,
+  dni                   text not null,
+  nombre                text not null,              -- nombre completo en un solo campo
+  telefono_e164         text not null,
+  email                 text,
+  cobertura_id          uuid,                       -- NULL = particular
+  plan                  text,
+  nro_afiliado          text,
+  notas_administrativas text,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now(),
+  constraint pacientes_id_prof_uq  unique (id, profesional_id),
+  constraint pacientes_prof_dni_uq unique (profesional_id, dni),
+  constraint pacientes_dni_fmt     check (dni ~ '^[0-9A-Za-z]{5,20}$'),
+  constraint pacientes_tel_e164    check (telefono_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+  constraint pacientes_cobertura_fk foreign key (cobertura_id, profesional_id)
+    references public.coberturas (id, profesional_id) on delete set null (cobertura_id)
+);
+create index if not exists idx_pacientes_nombre on public.pacientes (profesional_id, nombre);
+create index if not exists idx_pacientes_dni on public.pacientes (profesional_id, dni);
+
+-- 11. turnos
+create table if not exists public.turnos (
+  id                      uuid primary key default gen_random_uuid(),
+  profesional_id          uuid not null references public.profesionales (id) on delete cascade,
+  paciente_id             uuid not null,
+  servicio_id             uuid not null,
+  sede_id                 uuid,
+  modalidad               public.modalidad_atencion not null,
+  inicio_utc              timestamptz not null,
+  fin_utc                 timestamptz not null,
+  estado                  public.estado_turno not null default 'pendiente',
+  estado_pago             public.estado_pago  not null default 'pendiente',
+  arancel_centavos        bigint not null default 0,
+  motivo_consulta         text,
+  origen                  public.origen_turno not null default 'dashboard',
+  es_sobreturno           boolean not null default false,
+  turno_origen_id         uuid references public.turnos (id) on delete set null,
+  cancelado_por           public.actor_cambio,
+  notas_cancelacion       text,
+  manage_token_hash       bytea unique,             -- sha256 del token que recibe el paciente
+  created_at              timestamptz not null default now(),
+  updated_at              timestamptz not null default now(),
+  constraint turnos_id_prof_uq unique (id, profesional_id),
+  constraint turnos_rango      check (inicio_utc < fin_utc),
+  constraint turnos_modalidad  check (modalidad <> 'ambas'),
+  constraint turnos_arancel    check (arancel_centavos >= 0),
+  constraint turnos_sobreturno_solo_dashboard check (not es_sobreturno or origen = 'dashboard'),
+  constraint turnos_paciente_fk foreign key (paciente_id, profesional_id)
+    references public.pacientes (id, profesional_id) on delete restrict,
+  constraint turnos_servicio_fk foreign key (servicio_id, profesional_id)
+    references public.servicios (id, profesional_id) on delete restrict,
+  constraint turnos_sede_fk foreign key (sede_id, profesional_id)
+    references public.sedes (id, profesional_id) on delete set null (sede_id),
+  constraint turnos_sin_solapamiento exclude using gist (
+    profesional_id with =,
+    tstzrange(inicio_utc, fin_utc, '[)') with &&
+  ) where (estado in ('pendiente', 'atendido', 'ausente') and not es_sobreturno)
+);
+create index if not exists idx_turnos_agenda   on public.turnos (profesional_id, inicio_utc);
+create index if not exists idx_turnos_paciente on public.turnos (paciente_id, inicio_utc desc);
+create index if not exists idx_turnos_estado   on public.turnos (profesional_id, estado);
+
+-- 12. bloqueos_temporales (reserva provisoria de 10 min en el portal web)
+create table if not exists public.bloqueos_temporales (
+  id              uuid primary key default gen_random_uuid(),
+  profesional_id  uuid not null references public.profesionales (id) on delete cascade,
+  servicio_id     uuid not null,
+  sede_id         uuid,
+  modalidad       public.modalidad_atencion not null,
+  slot_inicio     timestamptz not null,
+  slot_fin        timestamptz not null,
+  session_id      text not null,
+  created_at      timestamptz not null default now(),
+  expires_at      timestamptz not null default (now() + interval '10 minutes'),
+  constraint bloqueos_id_prof_uq unique (id, profesional_id),
+  constraint bloqueos_rango      check (slot_inicio < slot_fin),
+  constraint bloqueos_modalidad  check (modalidad <> 'ambas'),
+  constraint bloqueos_servicio_fk foreign key (servicio_id, profesional_id)
+    references public.servicios (id, profesional_id) on delete cascade,
+  constraint bloqueos_sede_fk foreign key (sede_id, profesional_id)
+    references public.sedes (id, profesional_id) on delete cascade,
+  constraint bloqueos_sin_solapamiento exclude using gist (
+    profesional_id with =,
+    tstzrange(slot_inicio, slot_fin, '[)') with &&
+  )
+);
+create index if not exists idx_bloqueos_expira on public.bloqueos_temporales (expires_at);
+create index if not exists idx_bloqueos_sesion on public.bloqueos_temporales (profesional_id, session_id);
+
+-- 13. fichas_clinicas (1:1 con paciente; la crea automáticamente un trigger)
+create table if not exists public.fichas_clinicas (
+  id                       uuid primary key default gen_random_uuid(),
+  profesional_id           uuid not null references public.profesionales (id) on delete cascade,
+  paciente_id              uuid not null unique,
+  antecedentes_personales  text,
+  antecedentes_patologicos text,
+  alergias                 text,
+  medicacion_habitual      text,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now(),
+  constraint fichas_id_prof_uq unique (id, profesional_id),
+  constraint fichas_paciente_fk foreign key (paciente_id, profesional_id)
+    references public.pacientes (id, profesional_id) on delete cascade
 );
 
-CREATE INDEX IF NOT EXISTS idx_franjas_profesional_dia ON franjas_horarias(profesional_id, dia_semana, activo);
+-- 14. notas_evolucion (evolución clínica estructurada SOAP / texto plano / JSON TipTap)
+create table if not exists public.notas_evolucion (
+  id               uuid primary key default gen_random_uuid(),
+  profesional_id   uuid not null references public.profesionales (id) on delete cascade,
+  ficha_id         uuid not null,
+  turno_id         uuid,
+  fecha_atencion   timestamptz not null default now(),
+  especialidad     text,
+  texto_plano      text,
+  motivo_consulta  text,
+  subjetivo_s      text,
+  objetivo_o       text,
+  evaluacion_a     text,
+  plan_p           text,
+  contenido_tiptap jsonb,
+  version          int not null default 1,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  constraint notas_id_prof_uq unique (id, profesional_id),
+  constraint notas_ficha_fk foreign key (ficha_id, profesional_id)
+    references public.fichas_clinicas (id, profesional_id) on delete cascade,
+  constraint notas_turno_fk foreign key (turno_id, profesional_id)
+    references public.turnos (id, profesional_id) on delete set null (turno_id)
+);
+create index if not exists idx_notas_ficha_fecha on public.notas_evolucion (ficha_id, fecha_atencion desc);
 
--- ----------------------------------------------------------------------------
--- 5. TABLA: descansos_horarios
--- Bloqueos de descanso/almuerzo dentro de cada franja horaria
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS descansos_horarios (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    franja_id UUID NOT NULL REFERENCES franjas_horarias(id) ON DELETE CASCADE,
-    hora_inicio TIME NOT NULL,
-    hora_fin TIME NOT NULL,
-    motivo VARCHAR(100) DEFAULT 'Almuerzo / Descanso',
-    CONSTRAINT check_orden_descanso CHECK (hora_inicio < hora_fin)
+-- 15. adjuntos_paciente (estudios médicos, PDF e imágenes)
+create table if not exists public.adjuntos_paciente (
+  id                     uuid primary key default gen_random_uuid(),
+  profesional_id         uuid not null references public.profesionales (id) on delete cascade,
+  paciente_id            uuid not null,
+  nota_id                uuid,
+  nombre_archivo         text not null,
+  tipo_mime              text not null,
+  tamano_bytes           bigint not null default 0,
+  storage_path           text not null,           -- <profesional_id>/<paciente_id>/<archivo>
+  storage_thumbnail_path text,
+  drive_file_id          text,                    -- enlace espejo opcional a Google Drive
+  created_at             timestamptz not null default now(),
+  constraint adjuntos_ruta_propia check (storage_path like profesional_id::text || '/%'),
+  constraint adjuntos_paciente_fk foreign key (paciente_id, profesional_id)
+    references public.pacientes (id, profesional_id) on delete cascade,
+  constraint adjuntos_nota_fk foreign key (nota_id, profesional_id)
+    references public.notas_evolucion (id, profesional_id) on delete set null (nota_id)
+);
+create index if not exists idx_adjuntos_paciente on public.adjuntos_paciente (paciente_id);
+
+-- 16. auditoria_turnos (registro inmutable de transiciones de estado)
+create table if not exists public.auditoria_turnos (
+  id              uuid primary key default gen_random_uuid(),
+  profesional_id  uuid not null references public.profesionales (id) on delete cascade,
+  turno_id        uuid not null,
+  estado_anterior public.estado_turno,
+  estado_nuevo    public.estado_turno not null,
+  motivo_cambio   text,
+  actor           public.actor_cambio not null,
+  autor_email     text,
+  ip_origen       text,
+  created_at      timestamptz not null default now(),
+  constraint auditoria_turno_fk foreign key (turno_id, profesional_id)
+    references public.turnos (id, profesional_id) on delete cascade
+);
+create index if not exists idx_auditoria_turno on public.auditoria_turnos (turno_id, created_at desc);
+
+-- 17. intentos_portal (control de frecuencia anti-spam para el portal público)
+create table if not exists public.intentos_portal (
+  clave    text not null,
+  ventana  timestamptz not null,
+  intentos int not null default 1,
+  primary key (clave, ventana)
 );
 
-CREATE INDEX IF NOT EXISTS idx_descansos_franja ON descansos_horarios(franja_id);
 
--- ----------------------------------------------------------------------------
--- 6. TABLA: pacientes
--- Ficha administrativa del paciente indexada por DNI y profesional
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS pacientes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    dni VARCHAR(20) NOT NULL,
-    nombre VARCHAR(100) NOT NULL,
-    apellido VARCHAR(100) NOT NULL,
-    telefono_e164 VARCHAR(30) NOT NULL,
-    email VARCHAR(255),
-    cobertura_medica VARCHAR(100) NOT NULL DEFAULT 'Particular',
-    nro_afiliado VARCHAR(50),
-    notas_administrativas TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_profesional_paciente_dni UNIQUE (profesional_id, dni)
-);
+-- ============================================================================
+-- MIGRACIÓN 4/7 · TRIGGERS Y FUNCIONES DE CONTROL
+-- ============================================================================
 
-CREATE INDEX IF NOT EXISTS idx_pacientes_dni ON pacientes(dni);
-CREATE INDEX IF NOT EXISTS idx_pacientes_profesional ON pacientes(profesional_id, apellido, nombre);
+-- updated_at automático
+drop trigger if exists trg_profesionales_upd on public.profesionales;
+create trigger trg_profesionales_upd before update on public.profesionales for each row execute function public.set_updated_at();
 
--- ----------------------------------------------------------------------------
--- 7. TABLA: turnos
--- Registro de citas agendadas, estados del ciclo de vida y control de cobro
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS turnos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    paciente_id UUID NOT NULL REFERENCES pacientes(id) ON DELETE RESTRICT,
-    servicio_id UUID NOT NULL REFERENCES servicios(id) ON DELETE RESTRICT,
-    inicio_utc TIMESTAMPTZ NOT NULL,
-    fin_utc TIMESTAMPTZ NOT NULL,
-    modalidad modalidad_atencion NOT NULL DEFAULT 'presencial',
-    estado estado_turno NOT NULL DEFAULT 'pendiente',
-    estado_pago estado_pago NOT NULL DEFAULT 'pendiente',
-    arancel_acordado_centavos BIGINT NOT NULL DEFAULT 0,
-    motivo_consulta TEXT,
-    notas_cancelacion TEXT,
-    turno_origen_id UUID REFERENCES turnos(id) ON DELETE SET NULL, -- Trazabilidad de reprogramaciones
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT check_rango_horario CHECK (inicio_utc < fin_utc)
-);
+drop trigger if exists trg_sedes_upd on public.sedes;
+create trigger trg_sedes_upd before update on public.sedes for each row execute function public.set_updated_at();
 
-CREATE INDEX IF NOT EXISTS idx_turnos_profesional_fecha ON turnos(profesional_id, inicio_utc, estado);
-CREATE INDEX IF NOT EXISTS idx_turnos_paciente ON turnos(paciente_id);
-CREATE INDEX IF NOT EXISTS idx_turnos_estado ON turnos(estado);
+drop trigger if exists trg_servicios_upd on public.servicios;
+create trigger trg_servicios_upd before update on public.servicios for each row execute function public.set_updated_at();
 
--- ----------------------------------------------------------------------------
--- 8. TABLA: bloqueos_temporales
--- Reserva temporal (Hold 10 min) en el portal web para evitar colisiones de turno
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS bloqueos_temporales (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    slot_inicio TIMESTAMPTZ NOT NULL,
-    slot_fin TIMESTAMPTZ NOT NULL,
-    session_id VARCHAR(100) NOT NULL,
-    expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT check_hold_rango CHECK (slot_inicio < slot_fin)
-);
+drop trigger if exists trg_franjas_upd on public.franjas_horarias;
+create trigger trg_franjas_upd before update on public.franjas_horarias for each row execute function public.set_updated_at();
 
-CREATE INDEX IF NOT EXISTS idx_bloqueos_expiracion ON bloqueos_temporales(profesional_id, expires_at);
+drop trigger if exists trg_plantillas_upd on public.plantillas_mensajes;
+create trigger trg_plantillas_upd before update on public.plantillas_mensajes for each row execute function public.set_updated_at();
 
--- ----------------------------------------------------------------------------
--- 9. TABLA: fichas_clinicas
--- Expediente médico principal vinculado al paciente
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS fichas_clinicas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    paciente_id UUID NOT NULL UNIQUE REFERENCES pacientes(id) ON DELETE CASCADE,
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    antecedentes_personales TEXT,
-    antecedentes_patologicos TEXT,
-    alergias TEXT,
-    medicacion_habitual TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+drop trigger if exists trg_pacientes_upd on public.pacientes;
+create trigger trg_pacientes_upd before update on public.pacientes for each row execute function public.set_updated_at();
 
-CREATE INDEX IF NOT EXISTS idx_fichas_profesional ON fichas_clinicas(profesional_id);
+drop trigger if exists trg_turnos_upd on public.turnos;
+create trigger trg_turnos_upd before update on public.turnos for each row execute function public.set_updated_at();
 
--- ----------------------------------------------------------------------------
--- 10. TABLA: notas_evolucion
--- Evoluciones clínicas redactadas en cada consulta (formato SOAP estructurado)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS notas_evolucion (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    ficha_id UUID NOT NULL REFERENCES fichas_clinicas(id) ON DELETE CASCADE,
-    turno_id UUID REFERENCES turnos(id) ON DELETE SET NULL,
-    fecha_atencion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    motivo_consulta TEXT,
-    subjetivo_s TEXT,    -- S: Lo que el paciente refiere
-    objetivo_o TEXT,      -- O: Hallazgos clínicos / exploración física
-    evaluacion_a TEXT,    -- A: Diagnóstico / impresión médica
-    plan_p TEXT,          -- P: Tratamiento, ejercicios y próximos pasos
-    contenido_tiptap JSONB, -- Contenido enriquecido serializado
-    version INT NOT NULL DEFAULT 1,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+drop trigger if exists trg_fichas_upd on public.fichas_clinicas;
+create trigger trg_fichas_upd before update on public.fichas_clinicas for each row execute function public.set_updated_at();
 
-CREATE INDEX IF NOT EXISTS idx_notas_ficha_fecha ON notas_evolucion(ficha_id, fecha_atencion DESC);
-CREATE INDEX IF NOT EXISTS idx_notas_turno ON notas_evolucion(turno_id);
+drop trigger if exists trg_notas_upd on public.notas_evolucion;
+create trigger trg_notas_upd before update on public.notas_evolucion for each row execute function public.set_updated_at();
 
--- ----------------------------------------------------------------------------
--- 11. TABLA: adjuntos_paciente
--- Estudios médicos, ecografías, radiografías y análisis de laboratorio
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS adjuntos_paciente (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    paciente_id UUID NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
-    nota_id UUID REFERENCES notas_evolucion(id) ON DELETE SET NULL,
-    nombre_archivo VARCHAR(255) NOT NULL,
-    tipo_mime VARCHAR(100) NOT NULL,
-    tamano_bytes BIGINT NOT NULL DEFAULT 0,
-    storage_uri TEXT NOT NULL,
-    storage_thumbnail_uri TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+-- public_id es la ruta permanente del QR: no puede ser modificada.
+create or replace function public.profesionales_proteger_campos()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if new.public_id is distinct from old.public_id then
+    raise exception 'public_id no se puede modificar';
+  end if;
+  return new;
+end;
+$$;
 
-CREATE INDEX IF NOT EXISTS idx_adjuntos_paciente ON adjuntos_paciente(paciente_id);
-CREATE INDEX IF NOT EXISTS idx_adjuntos_nota ON adjuntos_paciente(nota_id);
+drop trigger if exists trg_profesionales_proteger on public.profesionales;
+create trigger trg_profesionales_proteger before update on public.profesionales
+  for each row execute function public.profesionales_proteger_campos();
 
--- ----------------------------------------------------------------------------
--- 12. TABLA: plantillas_mensajes
--- Mensajes predefinidos para WhatsApp / Email con marcadores dinámicos
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS plantillas_mensajes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    profesional_id UUID NOT NULL REFERENCES profesionales(id) ON DELETE CASCADE,
-    tipo_mensaje tipo_plantilla NOT NULL,
-    canal canal_mensaje NOT NULL DEFAULT 'whatsapp',
-    titulo VARCHAR(100) NOT NULL,
-    cuerpo_plantilla TEXT NOT NULL,
-    activo BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_profesional_tipo_canal UNIQUE (profesional_id, tipo_mensaje, canal)
-);
+-- Cada nota nueva incrementa version en cada edición.
+create or replace function public.notas_incrementar_version()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  new.version := old.version + 1;
+  return new;
+end;
+$$;
 
-CREATE INDEX IF NOT EXISTS idx_plantillas_profesional ON plantillas_mensajes(profesional_id, activo);
+drop trigger if exists trg_notas_version on public.notas_evolucion;
+create trigger trg_notas_version before update on public.notas_evolucion
+  for each row execute function public.notas_incrementar_version();
 
--- ----------------------------------------------------------------------------
--- 13. TABLA: auditoria_turnos
--- Registro inmutable de transiciones de estado para auditoría y métricas
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS auditoria_turnos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    turno_id UUID NOT NULL REFERENCES turnos(id) ON DELETE CASCADE,
-    estado_anterior VARCHAR(30),
-    estado_nuevo VARCHAR(30) NOT NULL,
-    motivo_cambio TEXT,
-    autor_email VARCHAR(255),
-    ip_origen VARCHAR(45),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+-- Todo paciente nuevo recibe su ficha clínica vacía (relación 1:1 garantizada).
+create or replace function public.pacientes_crear_ficha()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.fichas_clinicas (profesional_id, paciente_id)
+  values (new.profesional_id, new.id)
+  on conflict (paciente_id) do nothing;
+  return new;
+end;
+$$;
 
-CREATE INDEX IF NOT EXISTS idx_auditoria_turno ON auditoria_turnos(turno_id, created_at DESC);
+drop trigger if exists trg_pacientes_ficha on public.pacientes;
+create trigger trg_pacientes_ficha after insert on public.pacientes
+  for each row execute function public.pacientes_crear_ficha();
+
+-- Auditoría automática de estados del turno.
+create or replace function public.turnos_auditar()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_rol text := coalesce(auth.jwt() ->> 'role', '');
+  v_ip  text := coalesce(
+                  nullif(current_setting('app.client_ip', true), ''),
+                  nullif(left(trim(regexp_replace(
+                    coalesce((nullif(current_setting('request.headers', true), '')::json) ->> 'x-forwarded-for', ''),
+                    '^.*,', '')), 45), ''));
+begin
+  if tg_op = 'UPDATE' and new.estado is not distinct from old.estado then
+    return new;
+  end if;
+
+  insert into public.auditoria_turnos
+    (profesional_id, turno_id, estado_anterior, estado_nuevo, motivo_cambio, actor, autor_email, ip_origen)
+  values (
+    new.profesional_id,
+    new.id,
+    case when tg_op = 'UPDATE' then old.estado end,
+    new.estado,
+    case when new.estado = 'cancelado' then new.notas_cancelacion end,
+    (case v_rol when 'authenticated' then 'profesional' when 'anon' then 'paciente' else 'sistema' end)::public.actor_cambio,
+    auth.jwt() ->> 'email',
+    v_ip
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_turnos_auditoria on public.turnos;
+create trigger trg_turnos_auditoria after insert or update of estado on public.turnos
+  for each row execute function public.turnos_auditar();
+
+-- Bloqueo de borrado directo: historia clínica y turnos se conservan (se cancelan, no se borran).
+create or replace function public.bloquear_borrado_directo()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  if pg_trigger_depth() = 1 then
+    raise exception 'No se puede borrar % directamente: los datos clínicos y de agenda se conservan.', tg_table_name
+      using errcode = '23001';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_pacientes_sin_borrado on public.pacientes;
+create trigger trg_pacientes_sin_borrado before delete on public.pacientes for each row execute function public.bloquear_borrado_directo();
+
+drop trigger if exists trg_turnos_sin_borrado on public.turnos;
+create trigger trg_turnos_sin_borrado before delete on public.turnos for each row execute function public.bloquear_borrado_directo();
+
+drop trigger if exists trg_fichas_sin_borrado on public.fichas_clinicas;
+create trigger trg_fichas_sin_borrado before delete on public.fichas_clinicas for each row execute function public.bloquear_borrado_directo();
+
+drop trigger if exists trg_notas_sin_borrado on public.notas_evolucion;
+create trigger trg_notas_sin_borrado before delete on public.notas_evolucion for each row execute function public.bloquear_borrado_directo();
+
+drop trigger if exists trg_auditoria_sin_borrado on public.auditoria_turnos;
+create trigger trg_auditoria_sin_borrado before delete on public.auditoria_turnos for each row execute function public.bloquear_borrado_directo();
+
+
+-- ============================================================================
+-- MIGRACIÓN 5/7 · ROW LEVEL SECURITY (RLS) Y PERMISOS
+-- ============================================================================
+
+-- 1) RLS activo en todas las tablas
+alter table public.profesionales        enable row level security;
+alter table public.sedes                enable row level security;
+alter table public.coberturas           enable row level security;
+alter table public.servicios            enable row level security;
+alter table public.franjas_horarias     enable row level security;
+alter table public.descansos_horarios   enable row level security;
+alter table public.ausencias            enable row level security;
+alter table public.feriados_profesional enable row level security;
+alter table public.plantillas_mensajes  enable row level security;
+alter table public.pacientes            enable row level security;
+alter table public.turnos               enable row level security;
+alter table public.bloqueos_temporales  enable row level security;
+alter table public.fichas_clinicas      enable row level security;
+alter table public.notas_evolucion      enable row level security;
+alter table public.adjuntos_paciente    enable row level security;
+alter table public.auditoria_turnos     enable row level security;
+alter table public.intentos_portal      enable row level security;
+
+-- 2) Privilegios mínimos
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+
+grant select, insert, update, delete on
+  public.sedes, public.coberturas, public.servicios, public.franjas_horarias,
+  public.descansos_horarios, public.ausencias, public.feriados_profesional,
+  public.plantillas_mensajes
+  to authenticated;
+
+grant select, insert, update on public.profesionales to authenticated;
+
+grant select, insert, update on
+  public.pacientes, public.turnos, public.fichas_clinicas, public.notas_evolucion
+  to authenticated;
+
+grant select, insert, update, delete on public.adjuntos_paciente to authenticated;
+grant select on public.auditoria_turnos to authenticated;
+
+-- 3) Políticas RLS
+drop policy if exists profesionales_ver on public.profesionales;
+create policy profesionales_ver on public.profesionales
+  for select to authenticated using (id = (select auth.uid()));
+
+drop policy if exists profesionales_crear on public.profesionales;
+create policy profesionales_crear on public.profesionales
+  for insert to authenticated
+  with check (id = (select auth.uid()) and lower(email) = lower((select auth.jwt() ->> 'email')));
+
+drop policy if exists profesionales_editar on public.profesionales;
+create policy profesionales_editar on public.profesionales
+  for update to authenticated
+  using (id = (select auth.uid())) with check (id = (select auth.uid()));
+
+-- Políticas genéricas para tablas que pertenecen a un profesional
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'sedes','coberturas','servicios','franjas_horarias','descansos_horarios','ausencias',
+    'feriados_profesional','plantillas_mensajes','pacientes','turnos','fichas_clinicas',
+    'notas_evolucion','adjuntos_paciente'
+  ] loop
+    execute format('drop policy if exists %I on public.%I', t || '_propios', t);
+    execute format(
+      'create policy %I on public.%I for all to authenticated
+         using (profesional_id = (select auth.uid()))
+         with check (profesional_id = (select auth.uid()))',
+      t || '_propios', t);
+  end loop;
+end $$;
+
+drop policy if exists auditoria_ver on public.auditoria_turnos;
+create policy auditoria_ver on public.auditoria_turnos
+  for select to authenticated using (profesional_id = (select auth.uid()));
+
+
+-- ============================================================================
+-- MIGRACIÓN 6/7 · FUNCIONES DEL PORTAL PÚBLICO DEL PACIENTE
+-- ============================================================================
+
+-- Helper para extracción de IP confiable
+create or replace function public._portal_ip(p_ip text default null)
+returns text language plpgsql stable set search_path = '' as $$
+declare
+  v_xff text := coalesce((nullif(current_setting('request.headers', true), '')::json) ->> 'x-forwarded-for', '');
+begin
+  if coalesce(auth.jwt() ->> 'role', '') = 'service_role'
+     and p_ip is not null and trim(p_ip) ~ '^[0-9a-fA-F:.]{3,45}$' then
+    return trim(p_ip);
+  end if;
+  return nullif(left(trim(regexp_replace(v_xff, '^.*,', '')), 45), '');
+end;
+$$;
+
+-- Helper para límite de frecuencia
+create or replace function public._portal_limitar(p_clave text, p_max int, p_ventana interval)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_ventana timestamptz := date_bin(p_ventana, now(), timestamptz '2000-01-03 00:00+00');
+  v_n int;
+begin
+  insert into public.intentos_portal as i (clave, ventana, intentos)
+  values (p_clave, v_ventana, 1)
+  on conflict (clave, ventana) do update set intentos = i.intentos + 1
+  returning i.intentos into v_n;
+
+  if v_n > p_max then
+    raise exception 'demasiados_intentos' using errcode = 'PT429';
+  end if;
+end;
+$$;
+
+-- Helper para verificar disponibilidad en horario habitual y descansos
+create or replace function public._slot_en_horario(
+  p_prof uuid, p_ini timestamptz, p_fin timestamptz,
+  p_modalidad public.modalidad_atencion, p_sede uuid, p_tz text)
+returns boolean language sql stable set search_path = '' as $$
+  select exists (
+    select 1
+    from public.franjas_horarias f
+    where f.profesional_id = p_prof
+      and f.activo
+      and f.dia_semana = extract(isodow from (p_ini at time zone p_tz))::int
+      and (p_ini at time zone p_tz)::date = (p_fin at time zone p_tz)::date
+      and (p_ini at time zone p_tz)::time >= f.hora_inicio
+      and (p_fin at time zone p_tz)::time <= f.hora_fin
+      and (f.modalidad_permitida = 'ambas' or f.modalidad_permitida = p_modalidad)
+      and (p_modalidad = 'videollamada' or f.sede_id is null or f.sede_id = p_sede)
+      and not exists (
+        select 1 from public.descansos_horarios d
+        where d.franja_id = f.id
+          and (p_ini at time zone p_tz)::time < d.hora_fin
+          and (p_fin at time zone p_tz)::time > d.hora_inicio)
+  );
+$$;
+
+-- 1. portal_agenda_publica: devuelve configuración, servicios, sedes, coberturas y slots ocupados
+create or replace function public.portal_agenda_publica(
+  p_ref text, p_desde date, p_hasta date, p_session_id text default null)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_prof public.profesionales%rowtype;
+  v_desde timestamptz;
+  v_hasta timestamptz;
+begin
+  select * into v_prof from public.profesionales p
+   where lower(p.slug) = lower(trim(p_ref)) or p.public_id = trim(p_ref);
+  if not found then
+    raise exception 'profesional_no_encontrado' using errcode = 'PT404';
+  end if;
+
+  if p_desde is null or p_hasta is null or p_hasta < p_desde or p_hasta - p_desde > 62 then
+    raise exception 'rango_invalido' using errcode = 'PT400';
+  end if;
+
+  v_desde := p_desde::timestamp at time zone v_prof.zona_horaria;
+  v_hasta := (p_hasta + 1)::timestamp at time zone v_prof.zona_horaria;
+
+  return jsonb_build_object(
+    'profesional', jsonb_build_object(
+      'id_publico', v_prof.public_id, 'slug', v_prof.slug,
+      'nombre', v_prof.nombre,
+      'titulo', v_prof.titulo, 'especialidad', v_prof.especialidad,
+      'matricula_nacional', v_prof.matricula_nacional,
+      'matricula_provincial', v_prof.matricula_provincial,
+      'foto_perfil_path', v_prof.foto_perfil_path,
+      'agenda_pausada', v_prof.agenda_pausada,
+      'zona_horaria', v_prof.zona_horaria,
+      'intervalo_turnos_min', v_prof.intervalo_turnos_min,
+      'anticipacion_minima_hs', v_prof.anticipacion_minima_hs,
+      'horizonte_maximo_dias', v_prof.horizonte_maximo_dias,
+      'margen_entre_turnos_min', v_prof.margen_entre_turnos_min,
+      'plazo_cancelacion_hs', v_prof.plazo_cancelacion_hs,
+      'alias_mp', v_prof.alias_mp,
+      'titular_cuenta', v_prof.titular_cuenta,
+      'cbu_cvu', v_prof.cbu_cvu,
+      'banco', v_prof.banco,
+      'cuit', v_prof.cuit),
+    'servicios', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', s.id, 'nombre', s.nombre, 'descripcion', s.descripcion,
+        'duracion_min', s.duracion_min, 'modalidad', s.modalidad,
+        'arancel_centavos', case when s.mostrar_precio then s.arancel_centavos end,
+        'moneda', s.moneda) order by s.orden, s.nombre)
+      from public.servicios s where s.profesional_id = v_prof.id and s.activo), '[]'::jsonb),
+    'sedes', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', x.id, 'nombre', x.nombre, 'direccion', x.direccion,
+        'indicaciones', x.indicaciones, 'maps_url', x.maps_url) order by x.nombre)
+      from public.sedes x where x.profesional_id = v_prof.id and x.activa), '[]'::jsonb),
+    'coberturas', coalesce((
+      select jsonb_agg(jsonb_build_object('id', c.id, 'nombre', c.nombre, 'tipo', c.tipo) order by c.nombre)
+      from public.coberturas c where c.profesional_id = v_prof.id), '[]'::jsonb),
+    'franjas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', f.id, 'dia_semana', f.dia_semana,
+        'hora_inicio', f.hora_inicio, 'hora_fin', f.hora_fin,
+        'modalidad_permitida', f.modalidad_permitida, 'sede_id', f.sede_id,
+        'descansos', coalesce((
+          select jsonb_agg(jsonb_build_object('hora_inicio', d.hora_inicio, 'hora_fin', d.hora_fin))
+          from public.descansos_horarios d where d.franja_id = f.id), '[]'::jsonb))
+        order by f.dia_semana, f.hora_inicio)
+      from public.franjas_horarias f where f.profesional_id = v_prof.id and f.activo), '[]'::jsonb),
+    'ocupados', coalesce((
+      select jsonb_agg(jsonb_build_object('inicio', r.i, 'fin', r.f))
+      from (
+        select t.inicio_utc as i, t.fin_utc as f from public.turnos t
+          where t.profesional_id = v_prof.id and t.estado in ('pendiente','atendido','ausente')
+            and t.inicio_utc < v_hasta and t.fin_utc > v_desde
+        union all
+        select b.slot_inicio, b.slot_fin from public.bloqueos_temporales b
+          where b.profesional_id = v_prof.id and b.expires_at > now()
+            and b.session_id is distinct from p_session_id
+            and b.slot_inicio < v_hasta and b.slot_fin > v_desde
+        union all
+        select a.inicio_utc, a.fin_utc from public.ausencias a
+          where a.profesional_id = v_prof.id and a.inicio_utc < v_hasta and a.fin_utc > v_desde
+      ) r), '[]'::jsonb),
+    'feriados', coalesce((
+      select jsonb_agg(jsonb_build_object('fecha', h.fecha, 'nombre', h.nombre, 'laborable', h.laborable))
+      from public.feriados_profesional h
+      where h.profesional_id = v_prof.id and h.fecha between p_desde and p_hasta), '[]'::jsonb)
+  );
+end;
+$$;
+
+-- 2. portal_crear_hold: reserva provisoria de 10 minutos
+create or replace function public.portal_crear_hold(
+  p_ref text, p_servicio_id uuid, p_inicio timestamptz,
+  p_modalidad public.modalidad_atencion, p_sede_id uuid, p_session_id text,
+  p_ip text default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_prof public.profesionales%rowtype;
+  v_serv public.servicios%rowtype;
+  v_ip   text := public._portal_ip(p_ip);
+  v_fin  timestamptz;
+  v_id   uuid;
+  v_exp  timestamptz;
+  v_margen interval;
+begin
+  if p_session_id is null or length(p_session_id) < 16 or length(p_session_id) > 100 then
+    raise exception 'sesion_invalida' using errcode = 'PT400';
+  end if;
+  if p_modalidad = 'ambas' then
+    raise exception 'modalidad_invalida' using errcode = 'PT400';
+  end if;
+
+  select * into v_prof from public.profesionales p
+   where lower(p.slug) = lower(trim(p_ref)) or p.public_id = trim(p_ref);
+  if not found then raise exception 'profesional_no_encontrado' using errcode = 'PT404'; end if;
+
+  perform public._portal_limitar('hold:' || coalesce(v_ip, 'sin-ip') || ':' || v_prof.id, 60, interval '10 minutes');
+
+  if v_prof.agenda_pausada then raise exception 'agenda_pausada' using errcode = 'PT409'; end if;
+
+  select * into v_serv from public.servicios s
+   where s.id = p_servicio_id and s.profesional_id = v_prof.id and s.activo;
+  if not found then raise exception 'servicio_no_disponible' using errcode = 'PT404'; end if;
+
+  if v_serv.modalidad <> 'ambas' and v_serv.modalidad <> p_modalidad then
+    raise exception 'modalidad_no_disponible' using errcode = 'PT409';
+  end if;
+
+  if p_sede_id is not null and not exists (
+       select 1 from public.sedes x where x.id = p_sede_id and x.profesional_id = v_prof.id and x.activa) then
+    raise exception 'sede_no_disponible' using errcode = 'PT404';
+  end if;
+
+  if p_modalidad = 'presencial' and p_sede_id is null
+     and exists (select 1 from public.sedes x where x.profesional_id = v_prof.id and x.activa) then
+    raise exception 'sede_requerida' using errcode = 'PT400';
+  end if;
+
+  v_fin := p_inicio + make_interval(mins => v_serv.duracion_min);
+  v_margen := make_interval(mins => v_prof.margen_entre_turnos_min);
+
+  if p_inicio < now() + make_interval(hours => v_prof.anticipacion_minima_hs) then
+    raise exception 'fuera_de_anticipacion' using errcode = 'PT409';
+  end if;
+  if p_inicio > now() + make_interval(days => v_prof.horizonte_maximo_dias) then
+    raise exception 'fuera_de_horizonte' using errcode = 'PT409';
+  end if;
+
+  if not public._slot_en_horario(v_prof.id, p_inicio, v_fin, p_modalidad, p_sede_id, v_prof.zona_horaria) then
+    raise exception 'horario_no_disponible' using errcode = 'PT409';
+  end if;
+
+  if exists (select 1 from public.ausencias a
+              where a.profesional_id = v_prof.id
+                and tstzrange(a.inicio_utc, a.fin_utc) && tstzrange(p_inicio, v_fin))
+     or exists (select 1 from public.feriados_profesional h
+              where h.profesional_id = v_prof.id and not h.laborable
+                and h.fecha = (p_inicio at time zone v_prof.zona_horaria)::date) then
+    raise exception 'horario_no_disponible' using errcode = 'PT409';
+  end if;
+
+  -- Serialización de reservas
+  perform pg_advisory_xact_lock(hashtextextended(v_prof.id::text, 0));
+
+  delete from public.bloqueos_temporales b
+   where b.profesional_id = v_prof.id and (b.expires_at <= now() or b.session_id = p_session_id);
+
+  if exists (select 1 from public.turnos t
+              where t.profesional_id = v_prof.id
+                and t.estado in ('pendiente','atendido','ausente') and not t.es_sobreturno
+                and tstzrange(t.inicio_utc - v_margen, t.fin_utc + v_margen) && tstzrange(p_inicio, v_fin))
+     or exists (select 1 from public.bloqueos_temporales b
+              where b.profesional_id = v_prof.id
+                and tstzrange(b.slot_inicio - v_margen, b.slot_fin + v_margen) && tstzrange(p_inicio, v_fin)) then
+    raise exception 'horario_ocupado' using errcode = 'PT409';
+  end if;
+
+  begin
+    insert into public.bloqueos_temporales
+      (profesional_id, servicio_id, sede_id, modalidad, slot_inicio, slot_fin, session_id)
+    values (v_prof.id, v_serv.id, p_sede_id, p_modalidad, p_inicio, v_fin, p_session_id)
+    returning id, expires_at into v_id, v_exp;
+  exception when exclusion_violation then
+    raise exception 'horario_ocupado' using errcode = 'PT409';
+  end;
+
+  return jsonb_build_object('hold_id', v_id, 'inicio', p_inicio, 'fin', v_fin, 'expira', v_exp);
+end;
+$$;
+
+-- 3. portal_confirmar_turno: confirma reserva convirtiendo el hold en turno
+create or replace function public.portal_confirmar_turno(
+  p_ref text, p_hold_id uuid, p_session_id text,
+  p_dni text, p_nombre text, p_telefono_e164 text,
+  p_email text default null, p_cobertura_id uuid default null,
+  p_plan text default null, p_nro_afiliado text default null, p_motivo text default null,
+  p_ip text default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_prof public.profesionales%rowtype;
+  v_hold public.bloqueos_temporales%rowtype;
+  v_serv public.servicios%rowtype;
+  v_ip   text := public._portal_ip(p_ip);
+  v_pac  uuid;
+  v_turno uuid;
+  v_token text;
+  v_sede jsonb;
+begin
+  select * into v_prof from public.profesionales p
+   where lower(p.slug) = lower(trim(p_ref)) or p.public_id = trim(p_ref);
+  if not found then raise exception 'profesional_no_encontrado' using errcode = 'PT404'; end if;
+
+  perform public._portal_limitar('confirmar:' || coalesce(v_ip, 'sin-ip') || ':' || v_prof.id, 15, interval '10 minutes');
+  perform set_config('app.client_ip', coalesce(v_ip, ''), true);
+
+  -- Validación de entradas del paciente (manejo seguro de emails vacíos)
+  if p_dni !~ '^[0-9A-Za-z]{5,20}$'
+     or p_telefono_e164 !~ '^\+[1-9][0-9]{7,14}$'
+     or coalesce(length(trim(p_nombre)), 0) not between 1 and 150
+     or (nullif(trim(p_email), '') is not null and trim(p_email) !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$')
+     or length(coalesce(p_motivo, '')) > 1000 then
+    raise exception 'datos_invalidos' using errcode = 'PT400';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_prof.id::text, 0));
+
+  select * into v_hold from public.bloqueos_temporales b
+   where b.id = p_hold_id and b.profesional_id = v_prof.id
+     and b.session_id = p_session_id and b.expires_at > now();
+  if not found then raise exception 'reserva_vencida' using errcode = 'PT410'; end if;
+
+  if v_prof.agenda_pausada then raise exception 'agenda_pausada' using errcode = 'PT409'; end if;
+
+  select * into v_serv from public.servicios s where s.id = v_hold.servicio_id;
+
+  -- Alta de paciente si no existe (no sobrescribe datos si ya existe)
+  insert into public.pacientes
+    (profesional_id, dni, nombre, telefono_e164, email, cobertura_id, plan, nro_afiliado)
+  values (v_prof.id, upper(trim(p_dni)), trim(p_nombre), trim(p_telefono_e164),
+          nullif(trim(p_email), ''),
+          (select c.id from public.coberturas c where c.id = p_cobertura_id and c.profesional_id = v_prof.id),
+          nullif(trim(p_plan), ''), nullif(trim(p_nro_afiliado), ''))
+  on conflict (profesional_id, dni) do nothing
+  returning id into v_pac;
+
+  if v_pac is null then
+    select id into v_pac from public.pacientes
+     where profesional_id = v_prof.id and dni = upper(trim(p_dni));
+  end if;
+
+  v_token := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+
+  begin
+    insert into public.turnos
+      (profesional_id, paciente_id, servicio_id, sede_id, modalidad, inicio_utc, fin_utc,
+       arancel_centavos, motivo_consulta, origen, manage_token_hash)
+    values (v_prof.id, v_pac, v_hold.servicio_id, v_hold.sede_id, v_hold.modalidad,
+            v_hold.slot_inicio, v_hold.slot_fin, v_serv.arancel_centavos,
+            nullif(trim(p_motivo), ''), 'portal', sha256(convert_to(v_token, 'utf8')))
+    returning id into v_turno;
+  exception when exclusion_violation then
+    delete from public.bloqueos_temporales where id = v_hold.id;
+    raise exception 'horario_ocupado' using errcode = 'PT409';
+  end;
+
+  delete from public.bloqueos_temporales where id = v_hold.id;
+
+  select jsonb_build_object('nombre', x.nombre, 'direccion', x.direccion,
+                            'indicaciones', x.indicaciones, 'maps_url', x.maps_url)
+    into v_sede from public.sedes x where x.id = v_hold.sede_id;
+
+  return jsonb_build_object(
+    'turno_id', v_turno,
+    'manage_token', v_token,
+    'inicio', v_hold.slot_inicio, 'fin', v_hold.slot_fin,
+    'modalidad', v_hold.modalidad,
+    'servicio', v_serv.nombre,
+    'arancel_centavos', case when v_serv.mostrar_precio then v_serv.arancel_centavos end,
+    'sede', v_sede,
+    'datos_cobro', case when v_serv.arancel_centavos > 0
+      then jsonb_build_object(
+        'alias', v_prof.alias_mp,
+        'titular', v_prof.titular_cuenta,
+        'cbu_cvu', v_prof.cbu_cvu,
+        'banco', v_prof.banco,
+        'cuit', v_prof.cuit) end);
+end;
+$$;
+
+-- 4. portal_ver_turno: consulta de turno por token
+create or replace function public.portal_ver_turno(p_token text)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  r record;
+  v_dentro_de_plazo boolean;
+begin
+  select t.id, t.servicio_id, t.inicio_utc, t.fin_utc, t.estado, t.estado_pago, t.arancel_centavos, t.modalidad,
+         s.nombre as servicio, s.mostrar_precio,
+         p.nombre as prof_nombre, p.slug, p.plazo_cancelacion_hs,
+         p.alias_mp, p.titular_cuenta, p.cbu_cvu, p.banco, p.cuit,
+         x.nombre as sede_nombre, x.direccion, x.maps_url
+    into r
+    from public.turnos t
+    join public.profesionales p on p.id = t.profesional_id
+    join public.servicios s on s.id = t.servicio_id and s.profesional_id = t.profesional_id
+    left join public.sedes x on x.id = t.sede_id and x.profesional_id = t.profesional_id
+   where t.manage_token_hash = sha256(convert_to(coalesce(p_token, ''), 'utf8'));
+  if not found then raise exception 'turno_no_encontrado' using errcode = 'PT404'; end if;
+
+  v_dentro_de_plazo := r.estado = 'pendiente'
+    and r.inicio_utc - make_interval(hours => r.plazo_cancelacion_hs) > now();
+
+  return jsonb_build_object(
+    'turno_id', r.id, 'servicio_id', r.servicio_id,
+    'inicio', r.inicio_utc, 'fin', r.fin_utc, 'estado', r.estado,
+    'estado_pago', r.estado_pago,
+    'arancel_centavos', case when r.mostrar_precio then r.arancel_centavos end,
+    'modalidad', r.modalidad, 'servicio', r.servicio,
+    'profesional', r.prof_nombre, 'slug', r.slug,
+    'sede', case when r.sede_nombre is not null
+      then jsonb_build_object('nombre', r.sede_nombre, 'direccion', r.direccion, 'maps_url', r.maps_url) end,
+    'datos_cobro', case when r.arancel_centavos > 0
+      then jsonb_build_object(
+        'alias', r.alias_mp,
+        'titular', r.titular_cuenta,
+        'cbu_cvu', r.cbu_cvu,
+        'banco', r.banco,
+        'cuit', r.cuit) end,
+    'plazo_cancelacion_hs', r.plazo_cancelacion_hs,
+    'puede_cancelar', v_dentro_de_plazo,
+    'puede_reprogramar', v_dentro_de_plazo,
+    'reprogramado_a', (select t2.id from public.turnos t2 where t2.turno_origen_id = r.id limit 1));
+end;
+$$;
+
+-- 5. portal_cancelar_turno
+create or replace function public.portal_cancelar_turno(
+  p_token text, p_motivo text default null, p_ip text default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_t public.turnos%rowtype;
+  v_plazo int;
+  v_ip text := public._portal_ip(p_ip);
+begin
+  perform public._portal_limitar('cancelar:' || coalesce(v_ip, 'sin-ip'), 30, interval '10 minutes');
+  perform set_config('app.client_ip', coalesce(v_ip, ''), true);
+
+  select * into v_t from public.turnos t
+   where t.manage_token_hash = sha256(convert_to(coalesce(p_token, ''), 'utf8')) for update;
+  if not found then raise exception 'turno_no_encontrado' using errcode = 'PT404'; end if;
+  if v_t.estado <> 'pendiente' then raise exception 'turno_no_cancelable' using errcode = 'PT409'; end if;
+
+  select plazo_cancelacion_hs into v_plazo from public.profesionales where id = v_t.profesional_id;
+  if v_t.inicio_utc - make_interval(hours => v_plazo) <= now() then
+    raise exception 'fuera_de_plazo' using errcode = 'PT403';
+  end if;
+
+  update public.turnos
+     set estado = 'cancelado', cancelado_por = 'paciente', notas_cancelacion = left(p_motivo, 500)
+   where id = v_t.id;
+
+  return jsonb_build_object('turno_id', v_t.id, 'estado', 'cancelado');
+end;
+$$;
+
+-- 6. portal_reprogramar_turno
+create or replace function public.portal_reprogramar_turno(
+  p_token text, p_hold_id uuid, p_session_id text, p_ip text default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_old  public.turnos%rowtype;
+  v_prof public.profesionales%rowtype;
+  v_hold public.bloqueos_temporales%rowtype;
+  v_ip   text := public._portal_ip(p_ip);
+  v_new  uuid;
+  v_token text;
+  v_sede jsonb;
+  v_servicio text;
+begin
+  perform public._portal_limitar('reprogramar:' || coalesce(v_ip, 'sin-ip'), 30, interval '10 minutes');
+  perform set_config('app.client_ip', coalesce(v_ip, ''), true);
+
+  select * into v_old from public.turnos t
+   where t.manage_token_hash = sha256(convert_to(coalesce(p_token, ''), 'utf8')) for update;
+  if not found then raise exception 'turno_no_encontrado' using errcode = 'PT404'; end if;
+  if v_old.estado <> 'pendiente' then raise exception 'turno_no_reprogramable' using errcode = 'PT409'; end if;
+
+  select * into v_prof from public.profesionales where id = v_old.profesional_id;
+  if v_old.inicio_utc - make_interval(hours => v_prof.plazo_cancelacion_hs) <= now() then
+    raise exception 'fuera_de_plazo' using errcode = 'PT403';
+  end if;
+  if v_prof.agenda_pausada then raise exception 'agenda_pausada' using errcode = 'PT409'; end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_prof.id::text, 0));
+
+  select * into v_hold from public.bloqueos_temporales b
+   where b.id = p_hold_id and b.profesional_id = v_old.profesional_id
+     and b.session_id = p_session_id and b.expires_at > now();
+  if not found then raise exception 'reserva_vencida' using errcode = 'PT410'; end if;
+
+  if v_hold.servicio_id <> v_old.servicio_id then
+    raise exception 'servicio_distinto' using errcode = 'PT409';
+  end if;
+
+  update public.turnos set estado = 'reprogramado' where id = v_old.id;
+
+  v_token := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  begin
+    insert into public.turnos
+      (profesional_id, paciente_id, servicio_id, sede_id, modalidad, inicio_utc, fin_utc,
+       estado_pago, arancel_centavos, motivo_consulta, origen, turno_origen_id, manage_token_hash)
+    values (v_old.profesional_id, v_old.paciente_id, v_old.servicio_id, v_hold.sede_id, v_hold.modalidad,
+            v_hold.slot_inicio, v_hold.slot_fin, v_old.estado_pago, v_old.arancel_centavos,
+            v_old.motivo_consulta, 'portal', v_old.id, sha256(convert_to(v_token, 'utf8')))
+    returning id into v_new;
+  exception when exclusion_violation then
+    raise exception 'horario_ocupado' using errcode = 'PT409';
+  end;
+
+  delete from public.bloqueos_temporales where id = v_hold.id;
+
+  select jsonb_build_object('nombre', x.nombre, 'direccion', x.direccion,
+                            'indicaciones', x.indicaciones, 'maps_url', x.maps_url)
+    into v_sede from public.sedes x where x.id = v_hold.sede_id;
+  select nombre into v_servicio from public.servicios where id = v_old.servicio_id;
+
+  return jsonb_build_object(
+    'turno_id', v_new, 'turno_anterior_id', v_old.id,
+    'manage_token', v_token,
+    'inicio', v_hold.slot_inicio, 'fin', v_hold.slot_fin,
+    'modalidad', v_hold.modalidad, 'servicio', v_servicio, 'sede', v_sede);
+end;
+$$;
+
+-- 7. purgar_expirados: mantenimiento de holds e intentos de portal
+create or replace function public.purgar_expirados()
+returns void language sql security definer set search_path = '' as $$
+  delete from public.bloqueos_temporales where expires_at <= now();
+  delete from public.intentos_portal where ventana < now() - interval '1 day';
+$$;
+
+-- Permisos de ejecución de funciones del portal
+revoke execute on all functions in schema public from public, anon, authenticated;
+
+grant execute on function
+  public.portal_agenda_publica(text, date, date, text),
+  public.portal_crear_hold(text, uuid, timestamptz, public.modalidad_atencion, uuid, text, text),
+  public.portal_confirmar_turno(text, uuid, text, text, text, text, text, uuid, text, text, text, text),
+  public.portal_ver_turno(text),
+  public.portal_cancelar_turno(text, text, text),
+  public.portal_reprogramar_turno(text, uuid, text, text)
+  to anon, authenticated, service_role;
+
+grant execute on function public.purgar_expirados() to service_role;
+
+
+-- ============================================================================
+-- MIGRACIÓN 7/7 · SUPABASE STORAGE
+-- ============================================================================
+
+-- Configuración de buckets en storage.buckets
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values
+  ('adjuntos-clinicos', 'adjuntos-clinicos', false, 20971520,
+   array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/dicom']),
+  ('fotos-perfil', 'fotos-perfil', true, 2097152,
+   array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
+
+-- Políticas de Storage para Adjuntos Clínicos (Privados: <profesional_id>/<paciente_id>/<archivo>)
+drop policy if exists adjuntos_clinicos_ver on storage.objects;
+create policy adjuntos_clinicos_ver on storage.objects for select to authenticated
+  using (bucket_id = 'adjuntos-clinicos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists adjuntos_clinicos_subir on storage.objects;
+create policy adjuntos_clinicos_subir on storage.objects for insert to authenticated
+  with check (bucket_id = 'adjuntos-clinicos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists adjuntos_clinicos_editar on storage.objects;
+create policy adjuntos_clinicos_editar on storage.objects for update to authenticated
+  using (bucket_id = 'adjuntos-clinicos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists adjuntos_clinicos_borrar on storage.objects;
+create policy adjuntos_clinicos_borrar on storage.objects for delete to authenticated
+  using (bucket_id = 'adjuntos-clinicos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- Políticas de Storage para Fotos de Perfil (Lectura pública, escritura por el profesional)
+drop policy if exists fotos_perfil_publico on storage.objects;
+create policy fotos_perfil_publico on storage.objects for select to anon, authenticated
+  using (bucket_id = 'fotos-perfil');
+
+drop policy if exists fotos_perfil_subir on storage.objects;
+create policy fotos_perfil_subir on storage.objects for insert to authenticated
+  with check (bucket_id = 'fotos-perfil' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists fotos_perfil_editar on storage.objects;
+create policy fotos_perfil_editar on storage.objects for update to authenticated
+  using (bucket_id = 'fotos-perfil' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists fotos_perfil_borrar on storage.objects;
+create policy fotos_perfil_borrar on storage.objects for delete to authenticated
+  using (bucket_id = 'fotos-perfil' and (storage.foldername(name))[1] = (select auth.uid())::text);
