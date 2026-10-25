@@ -142,16 +142,12 @@ export const PatientPortal: React.FC = () => {
   const [nombreArchivoSubido, setNombreArchivoSubido] = useState<string>('comprobante-transferencia.jpg');
   const [feedbackComprobantePaciente, setFeedbackComprobantePaciente] = useState<string | null>(null);
 
-  // Modal para consultar / autogestión de turno existente (Soporta búsqueda por DNI o Manage Token)
+  // Modal para consultar / autogestión de turnos reservados (Soporta búsqueda por DNI o Manage Token)
   const [modalConsultarTurno, setModalConsultarTurno] = useState(false);
   const [dniConsulta, setDniConsulta] = useState('');
-  const [turnoConsultado, setTurnoConsultado] = useState<Appointment | null>(null);
-  const [infoTurnoAutogestion, setInfoTurnoAutogestion] = useState<{
-    cancelable: boolean;
-    puede_reprogramar: boolean;
-    plazo_cancelacion_hs: number;
-    motivo_no_cancelable?: string;
-  } | null>(null);
+  const [dniPacienteConsultado, setDniPacienteConsultado] = useState<string | null>(null);
+  const [turnoSeleccionadoParaReprogramar, setTurnoSeleccionadoParaReprogramar] = useState<Appointment | null>(null);
+  const [turnoSeleccionadoParaCancelar, setTurnoSeleccionadoParaCancelar] = useState<Appointment | null>(null);
   const [errorConsulta, setErrorConsulta] = useState('');
   const [modoReprogramar, setModoReprogramar] = useState(false);
   const [fechaReprogramar, setFechaReprogramar] = useState('');
@@ -168,11 +164,54 @@ export const PatientPortal: React.FC = () => {
     return appointments.find(a => a.id === turnoConfirmado.id) || turnoConfirmado;
   }, [turnoConfirmado, appointments]);
 
-  // Turno consultado sincronizado reactivamente
-  const turnoConsultadoActual = useMemo(() => {
-    if (!turnoConsultado) return null;
-    return appointments.find(a => a.id === turnoConsultado.id) || turnoConsultado;
-  }, [turnoConsultado, appointments]);
+  // Turnos reservados en el período de "Horizonte máximo de reserva" para el paciente consultado
+  const horizonteDias = professional.parametros.horizonteDias || 30;
+
+  const turnosConsultados = useMemo(() => {
+    if (!dniPacienteConsultado) return [];
+
+    // Inicio del horizonte: inicio del día actual (00:00:00)
+    const inicioHorizonte = new Date();
+    inicioHorizonte.setHours(0, 0, 0, 0);
+
+    // Fin del horizonte: hoy + horizonteDias (23:59:59.999)
+    const finHorizonte = new Date(inicioHorizonte);
+    finHorizonte.setDate(finHorizonte.getDate() + horizonteDias);
+    finHorizonte.setHours(23, 59, 59, 999);
+
+    const inicioMs = inicioHorizonte.getTime();
+    const finMs = finHorizonte.getTime();
+
+    // Turnos reservados = activos, no cancelados y no reprogramados dentro del horizonte
+    return appointments
+      .filter(a => {
+        if (a.pacienteDni !== dniPacienteConsultado) return false;
+        if (a.estado === 'cancelado' || a.estado === 'reprogramado') return false;
+        const appIni = new Date(a.inicio).getTime();
+        return appIni >= inicioMs && appIni <= finMs;
+      })
+      .sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
+  }, [dniPacienteConsultado, appointments, horizonteDias]);
+
+  // Último turno agendado dentro del horizonte (único candidato a reprogramación si es Pendiente)
+  const ultimoTurnoReservado = useMemo(() => {
+    if (turnosConsultados.length === 0) return null;
+    return turnosConsultados[turnosConsultados.length - 1];
+  }, [turnosConsultados]);
+
+  // Turno en reprogramación sincronizado reactivamente
+  const turnoReprogramandoActual = useMemo(() => {
+    if (!turnoSeleccionadoParaReprogramar) return null;
+    return appointments.find(a => a.id === turnoSeleccionadoParaReprogramar.id) || turnoSeleccionadoParaReprogramar;
+  }, [turnoSeleccionadoParaReprogramar, appointments]);
+
+  // Historial de otros turnos del paciente (anteriores o cancelados)
+  const historialOtrosTurnos = useMemo(() => {
+    if (!dniPacienteConsultado) return [];
+    return appointments.filter(
+      a => a.pacienteDni === dniPacienteConsultado && !turnosConsultados.some(tc => tc.id === a.id)
+    );
+  }, [dniPacienteConsultado, appointments, turnosConsultados]);
 
   // Vista en marco de celular vs full width
   const [modoMarcoMovil, setModoMarcoMovil] = useState(false);
@@ -268,19 +307,26 @@ export const PatientPortal: React.FC = () => {
 
   const buscarTurnoPorTokenOId = async (tokenOId: string) => {
     try {
-      const res = await portalVerTurno({ p_token: tokenOId });
+      const cleanToken = tokenOId.trim();
+      const appt = appointments.find(
+        a =>
+          a.manageToken === cleanToken ||
+          a.id === cleanToken ||
+          a.id.slice(4).toUpperCase() === cleanToken.replace('#', '').toUpperCase()
+      );
+      if (appt) {
+        setDniConsulta(appt.pacienteDni);
+        setDniPacienteConsultado(appt.pacienteDni);
+        setModalConsultarTurno(true);
+        setErrorConsulta('');
+        return true;
+      }
+      const res = await portalVerTurno({ p_token: cleanToken });
       if (res && res.turno_id) {
-        const appt = appointments.find(a => a.id === res.turno_id || a.manageToken === tokenOId);
-        if (appt) {
-          setTurnoConsultado(appt);
-          setInfoTurnoAutogestion({
-            cancelable: res.puede_cancelar,
-            puede_reprogramar: res.puede_reprogramar,
-            plazo_cancelacion_hs: res.plazo_cancelacion_hs,
-            motivo_no_cancelable: !res.puede_cancelar
-              ? `El plazo límite para cancelar o reprogramar online (${res.plazo_cancelacion_hs} hs previas) ha vencido.`
-              : undefined,
-          });
+        const found = appointments.find(a => a.id === res.turno_id || a.manageToken === cleanToken);
+        if (found) {
+          setDniConsulta(found.pacienteDni);
+          setDniPacienteConsultado(found.pacienteDni);
           setModalConsultarTurno(true);
           setErrorConsulta('');
           return true;
@@ -449,8 +495,8 @@ export const PatientPortal: React.FC = () => {
 
   // Disponibilidad para reprogramar el turno consultado
   const diasDisponiblesReprog = useMemo(() => {
-    if (!turnoConsultadoActual) return [];
-    const srv = services.find(s => s.id === turnoConsultadoActual.serviceId) || services[0];
+    if (!turnoReprogramandoActual) return [];
+    const srv = services.find(s => s.id === turnoReprogramandoActual.serviceId) || services[0];
     if (!srv) return [];
     return calculateAvailability({
       professional,
@@ -458,12 +504,12 @@ export const PatientPortal: React.FC = () => {
       workingHours,
       holidays,
       timeOffs,
-      appointments: appointments.filter(a => a.id !== turnoConsultadoActual.id),
+      appointments: appointments.filter(a => a.id !== turnoReprogramandoActual.id),
       holds,
       currentSessionToken: sessionToken,
-      excludeAppointmentId: turnoConsultadoActual.id,
+      excludeAppointmentId: turnoReprogramandoActual.id,
     });
-  }, [turnoConsultadoActual, services, professional, workingHours, holidays, timeOffs, appointments, holds, sessionToken]);
+  }, [turnoReprogramandoActual, services, professional, workingHours, holidays, timeOffs, appointments, holds, sessionToken]);
 
   const diaReprogObj = useMemo(() => {
     if (!fechaReprogramar) return null;
@@ -520,10 +566,10 @@ export const PatientPortal: React.FC = () => {
         setFechaReprogramar(diasDisponiblesReprog[0].fecha);
         setHuecoReprogramar(null);
       }
-      if (turnoConsultadoActual && !huecoReprogramar) {
-        setModalidadReprogramar(turnoConsultadoActual.modalidad);
-        if (turnoConsultadoActual.locationId) {
-          setSedeReprogramarId(turnoConsultadoActual.locationId);
+      if (turnoReprogramandoActual && !huecoReprogramar) {
+        setModalidadReprogramar(turnoReprogramandoActual.modalidad);
+        if (turnoReprogramandoActual.locationId) {
+          setSedeReprogramarId(turnoReprogramandoActual.locationId);
         }
       }
     }
@@ -691,13 +737,17 @@ export const PatientPortal: React.FC = () => {
               onClick={() => {
                 setModalConsultarTurno(true);
                 setErrorConsulta('');
-                setTurnoConsultado(null);
+                setMensajeExitoAutogestion(null);
+                setModoReprogramar(false);
+                setTurnoSeleccionadoParaReprogramar(null);
+                setMostrarModalCancelar(false);
+                setTurnoSeleccionadoParaCancelar(null);
               }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/25 hover:border-white/40 text-xs font-semibold transition-all cursor-pointer shadow-xs"
-              title="Consultar turno reservado o subir comprobante de pago"
+              title="Consultar turnos reservados o autogestión"
             >
               <Search className="w-3.5 h-3.5 text-sky-200" />
-              <span>Consultar mi turno</span>
+              <span>Consultar mis turnos</span>
             </button>
           </div>
 
@@ -1918,8 +1968,12 @@ export const PatientPortal: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setModalConsultarTurno(false);
-                  setTurnoConsultado(null);
+                  setDniPacienteConsultado(null);
                   setErrorConsulta('');
+                  setModoReprogramar(false);
+                  setTurnoSeleccionadoParaReprogramar(null);
+                  setMostrarModalCancelar(false);
+                  setTurnoSeleccionadoParaCancelar(null);
                 }}
                 className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
@@ -1927,7 +1981,7 @@ export const PatientPortal: React.FC = () => {
               </button>
             </div>
 
-            {/* Formulario de Búsqueda por DNI */}
+            {/* Formulario de Búsqueda por DNI o Código */}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1938,57 +1992,103 @@ export const PatientPortal: React.FC = () => {
                     type="text"
                     value={dniConsulta}
                     onChange={e => setDniConsulta(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const clean = dniConsulta.trim();
+                        if (!clean) {
+                          setErrorConsulta('Por favor ingresá tu DNI o código de turno.');
+                          return;
+                        }
+                        setErrorConsulta('');
+                        setMensajeExitoAutogestion(null);
+                        setModoReprogramar(false);
+                        setTurnoSeleccionadoParaReprogramar(null);
+                        setMostrarModalCancelar(false);
+                        setTurnoSeleccionadoParaCancelar(null);
+
+                        let dniEncontrado = '';
+                        const apptPorToken = appointments.find(
+                          a =>
+                            a.manageToken === clean ||
+                            a.id.toLowerCase() === clean.toLowerCase() ||
+                            a.id.slice(4).toLowerCase() === clean.replace('#', '').toLowerCase()
+                        );
+
+                        if (apptPorToken) {
+                          dniEncontrado = apptPorToken.pacienteDni;
+                        } else {
+                          const digits = clean.replace(/\D/g, '');
+                          if (digits) {
+                            dniEncontrado = digits;
+                          }
+                        }
+
+                        if (!dniEncontrado) {
+                          setErrorConsulta('No encontramos turnos con esos datos. Verificá el DNI o código ingresado.');
+                          setDniPacienteConsultado(null);
+                          return;
+                        }
+
+                        const delPaciente = appointments.filter(a => a.pacienteDni === dniEncontrado);
+                        if (delPaciente.length === 0) {
+                          setErrorConsulta(`No encontramos turnos registrados para el DNI ${dniEncontrado}.`);
+                          setDniPacienteConsultado(null);
+                          return;
+                        }
+
+                        setDniPacienteConsultado(dniEncontrado);
+                      }
+                    }}
                     placeholder="Ej. 32198540 o código de turno"
                     className="flex-1 text-xs p-2.5 rounded-xl border border-slate-300 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 outline-none"
                   />
                   <button
                     type="button"
-                    onClick={async () => {
+                    onClick={() => {
                       const clean = dniConsulta.trim();
                       if (!clean) {
                         setErrorConsulta('Por favor ingresá tu DNI o código de turno.');
                         return;
                       }
-                      let encontrado = appointments.find(a => a.manageToken === clean || a.id === clean);
-                      if (!encontrado) {
-                        const dniDigits = clean.replace(/\D/g, '');
-                        if (dniDigits) {
-                          encontrado = appointments.find(a => a.pacienteDni === dniDigits && a.estado !== 'cancelado');
-                        }
-                      }
-                      if (encontrado) {
-                        setTurnoConsultado(encontrado);
-                        const plazoConfigurado = professional.parametros.plazoCancelacionHoras ?? 12;
-                        const iniMs = new Date(encontrado.inicio).getTime();
-                        const dentroDePlazo = encontrado.estado === 'pendiente' && (iniMs - plazoConfigurado * 3600 * 1000) > Date.now();
-                        setInfoTurnoAutogestion({
-                          cancelable: dentroDePlazo,
-                          puede_reprogramar: dentroDePlazo,
-                          plazo_cancelacion_hs: plazoConfigurado,
-                          motivo_no_cancelable: !dentroDePlazo
-                            ? `El plazo límite para cancelar o reprogramar online (${plazoConfigurado} hs previas) ha vencido.`
-                            : undefined,
-                        });
-                        try {
-                          const res = await portalVerTurno({ p_token: encontrado.manageToken || encontrado.id });
-                          if (res && res.turno_id) {
-                            setInfoTurnoAutogestion({
-                              cancelable: res.puede_cancelar,
-                              puede_reprogramar: res.puede_reprogramar,
-                              plazo_cancelacion_hs: res.plazo_cancelacion_hs,
-                              motivo_no_cancelable: !res.puede_cancelar
-                                ? `El plazo límite para cancelar o reprogramar online (${res.plazo_cancelacion_hs} hs previas) ha vencido.`
-                                : undefined,
-                            });
-                          }
-                        } catch {
-                          // keep initial info
-                        }
-                        setErrorConsulta('');
+                      setErrorConsulta('');
+                      setMensajeExitoAutogestion(null);
+                      setModoReprogramar(false);
+                      setTurnoSeleccionadoParaReprogramar(null);
+                      setMostrarModalCancelar(false);
+                      setTurnoSeleccionadoParaCancelar(null);
+
+                      let dniEncontrado = '';
+                      const apptPorToken = appointments.find(
+                        a =>
+                          a.manageToken === clean ||
+                          a.id.toLowerCase() === clean.toLowerCase() ||
+                          a.id.slice(4).toLowerCase() === clean.replace('#', '').toLowerCase()
+                      );
+
+                      if (apptPorToken) {
+                        dniEncontrado = apptPorToken.pacienteDni;
                       } else {
-                        setTurnoConsultado(null);
-                        setErrorConsulta('No encontramos un turno activo con esos datos.');
+                        const digits = clean.replace(/\D/g, '');
+                        if (digits) {
+                          dniEncontrado = digits;
+                        }
                       }
+
+                      if (!dniEncontrado) {
+                        setErrorConsulta('No encontramos turnos con esos datos. Verificá el DNI o código ingresado.');
+                        setDniPacienteConsultado(null);
+                        return;
+                      }
+
+                      const delPaciente = appointments.filter(a => a.pacienteDni === dniEncontrado);
+                      if (delPaciente.length === 0) {
+                        setErrorConsulta(`No encontramos turnos registrados para el DNI ${dniEncontrado}.`);
+                        setDniPacienteConsultado(null);
+                        return;
+                      }
+
+                      setDniPacienteConsultado(dniEncontrado);
                     }}
                     className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
                   >
@@ -2008,632 +2108,749 @@ export const PatientPortal: React.FC = () => {
                 )}
               </div>
 
-              {/* Si se encontró un turno */}
-              {turnoConsultadoActual && (
-                <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50 space-y-3.5 text-xs">
-                  <div className="flex justify-between items-start pb-2 border-b border-slate-200">
-                    <div>
-                      <span className="text-[11px] text-slate-400 block font-semibold">
-                        TURNO #{turnoConsultadoActual.id.slice(4, 10).toUpperCase()}
-                      </span>
-                      <strong className="text-sm text-slate-900 block">{turnoConsultadoActual.pacienteNombre}</strong>
+              {/* Si se consultó un paciente */}
+              {dniPacienteConsultado && (
+                <div className="space-y-4">
+                  {turnosConsultados.length === 0 ? (
+                    <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl text-center text-xs space-y-2">
+                      <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+                      <strong className="text-slate-800 block text-sm">
+                        Sin turnos reservados en el período activo
+                      </strong>
+                      <p className="text-slate-500 max-w-sm mx-auto">
+                        No registrás turnos reservados para el DNI <strong>{dniPacienteConsultado}</strong> dentro del período de <strong>Horizonte máximo de reserva ({horizonteDias} días)</strong>.
+                      </p>
+                      {historialOtrosTurnos.length > 0 && (
+                        <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-200/60 mt-2">
+                          Tenés {historialOtrosTurnos.length} {historialOtrosTurnos.length === 1 ? 'turno' : 'turnos'} en el historial (pasados o cancelados).
+                        </p>
+                      )}
                     </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                      turnoConsultadoActual.estado === 'atendido'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : turnoConsultadoActual.estado === 'pendiente'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {turnoConsultadoActual.estado.toUpperCase()}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-slate-700">
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Fecha y Hora:</span>
-                      <span className="font-semibold text-slate-900">
-                        {formatearFechaLarga(turnoConsultadoActual.inicio)} · {formatearHora(turnoConsultadoActual.inicio)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Modalidad:</span>
-                      <span className="font-semibold text-slate-900 capitalize">
-                        {turnoConsultadoActual.modalidad === 'presencial' ? 'Presencial' : 'Videollamada'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Servicio:</span>
-                      <span className="font-semibold text-slate-900">
-                        {services.find(s => s.id === turnoConsultadoActual.serviceId)?.nombre || 'Consulta'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[11px]">Arancel Completo:</span>
-                      <span className="font-bold text-slate-900 tabular-nums">
-                        {formatearMoneda(turnoConsultadoActual.precioCentavos)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Ubicación para el turno Presencial */}
-                  {turnoConsultadoActual.modalidad === 'presencial' && (() => {
-                    const locActual =
-                      locations.find(l => l.id === turnoConsultadoActual.locationId) || consultorioPresencial;
-                    return (
-                      <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs">
-                        <div className="flex items-start gap-2.5">
-                          <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
-                              Ubicación de atención presencial:
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Cabecera informativa de los turnos en el horizonte */}
+                      <div className="bg-sky-50/70 border border-sky-200 rounded-2xl p-3.5 space-y-2 text-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-bold text-sky-900 uppercase tracking-wider block">
+                              Paciente: {turnosConsultados[0]?.pacienteNombre}
                             </span>
-                            <span className="font-bold text-slate-900 block text-xs">
-                              {locActual.nombre}
+                            <span className="text-slate-600 text-[11px]">
+                              DNI {dniPacienteConsultado}
                             </span>
-                            <span className="text-slate-600 block text-xs mt-0.5">
-                              {locActual.direccion}
-                            </span>
-                            {locActual.indicaciones && (
-                              <span className="text-[11px] text-slate-500 italic block mt-1">
-                                Indicaciones: {locActual.indicaciones}
-                              </span>
-                            )}
-                            {locActual.mapsUrl && (
-                              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center">
-                                <a
-                                  href={locActual.mapsUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
-                                  <span>Ver ubicación en Google Maps</span>
-                                </a>
-                              </div>
-                            )}
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Aviso para el turno Videollamada (sin ubicación) */}
-                  {turnoConsultadoActual.modalidad === 'videollamada' && (
-                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
-                      <Video className="w-4 h-4 text-emerald-700 shrink-0" />
-                      <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
-                    </div>
-                  )}
-
-                  {/* Estado del Pago y Comprobante */}
-                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-800">Estado del Pago:</span>
-                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                        turnoConsultadoActual.estadoPago === 'pagado'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {turnoConsultadoActual.estadoPago === 'pagado' ? 'PAGADO ✓' : 'PENDIENTE DE PAGO'}
-                      </span>
-                    </div>
-
-                    {turnoConsultadoActual.comprobantePago ? (
-                      <div className="pt-2 border-t border-slate-100 text-[11px]">
-                        <div className="flex items-center justify-between font-semibold">
-                          <span>Comprobante Digital:</span>
-                          <span className={`${
-                            turnoConsultadoActual.comprobantePago.estado === 'aprobado'
-                              ? 'text-emerald-700'
-                              : turnoConsultadoActual.comprobantePago.estado === 'pendiente_revision'
-                              ? 'text-amber-700'
-                              : 'text-rose-700'
-                          }`}>
-                            {turnoConsultadoActual.comprobantePago.estado === 'aprobado'
-                              ? 'Aprobado ✓'
-                              : turnoConsultadoActual.comprobantePago.estado === 'pendiente_revision'
-                              ? 'En revisión...'
-                              : 'Observado ✗'}
+                          <span className="px-3 py-1 bg-sky-600 text-white rounded-full text-xs font-bold shadow-2xs">
+                            {turnosConsultados.length} {turnosConsultados.length === 1 ? 'turno reservado' : 'turnos reservados'}
                           </span>
                         </div>
-                        {turnoConsultadoActual.comprobantePago.notasRevision && (
-                          <div className="text-slate-500 italic mt-1">
-                            «{turnoConsultadoActual.comprobantePago.notasRevision}»
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-600 space-y-2">
-                        <p>
-                          No registrás comprobante cargado. Podés transferir con alias <strong>{professional.aliasCobro}</strong> y subir tu comprobante acá:
-                        </p>
-                        <div className="border border-dashed border-emerald-300 rounded-xl p-3 text-center bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
-                          <input
-                            type="file"
-                            id="consulta-modal-comprobante"
-                            accept="image/*,.pdf"
-                            onChange={e => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onload = ev => {
-                                  const url = ev.target?.result as string;
-                                  uploadPaymentProof(turnoConsultadoActual.id, {
-                                    url,
-                                    nombreArchivo: file.name,
-                                    montoCentavos: turnoConsultadoActual.precioCentavos,
-                                  });
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                            className="hidden"
-                          />
-                          <label
-                            htmlFor="consulta-modal-comprobante"
-                            className="cursor-pointer flex flex-col items-center justify-center gap-1"
-                          >
-                            <UploadCloud className="w-5 h-5 text-emerald-600" />
-                            <span className="font-bold text-emerald-800 text-xs">
-                              Adjuntar comprobante de transferencia
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              Foto o captura de pantalla (JPG, PNG o PDF)
-                            </span>
-                          </label>
+
+                        <div className="pt-2 border-t border-sky-100 flex items-start gap-1.5 text-[11px] text-sky-900/90 leading-relaxed">
+                          <Info className="w-3.5 h-3.5 text-sky-700 shrink-0 mt-0.5" />
+                          <span>
+                            Turnos en el <strong>Horizonte máximo de reserva ({horizonteDias} días)</strong>. Únicamente el <strong>último turno agendado en estado Pendiente</strong> es reprogramable online.
+                          </span>
                         </div>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Autogestión de Turno: Cancelar / Reprogramar según plazo límite */}
-                  {turnoConsultadoActual.estado === 'pendiente' && (
-                    <div className="pt-2 border-t border-slate-200 space-y-3">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Plazo:</span>
-                        <span className="font-semibold text-slate-700">
-                          Hasta {infoTurnoAutogestion?.plazo_cancelacion_hs ?? professional.parametros.plazoCancelacionHoras ?? 12} hs previas
-                        </span>
-                      </div>
+                      {/* Lista de todos los turnos reservados en el horizonte */}
+                      <div className="space-y-3.5">
+                        {turnosConsultados.map((appt, idx) => {
+                          const esElUltimo = ultimoTurnoReservado !== null && appt.id === ultimoTurnoReservado.id;
+                          const esPendiente = appt.estado === 'pendiente';
+                          const esReprogramable = esElUltimo && esPendiente;
+                          const plazoHs = professional.parametros.plazoCancelacionHoras ?? 24;
+                          const iniMs = new Date(appt.inicio).getTime();
+                          const dentroDePlazo = (iniMs - plazoHs * 3600 * 1000) > Date.now();
+                          const locActual = locations.find(l => l.id === appt.locationId) || consultorioPresencial;
 
-                      {infoTurnoAutogestion?.cancelable ? (
-                        <div className="space-y-2.5">
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setModoReprogramar(!modoReprogramar);
-                                setMostrarModalCancelar(false);
-                              }}
-                              className="py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                          return (
+                            <div
+                              key={appt.id}
+                              className={`border rounded-2xl p-4 bg-slate-50 space-y-3.5 text-xs transition-all ${
+                                esElUltimo
+                                  ? 'border-sky-300 ring-2 ring-sky-100 bg-white'
+                                  : 'border-slate-200'
+                              }`}
                             >
-                              <Clock className="w-3.5 h-3.5 text-amber-700" />
-                              <span>{modoReprogramar ? 'Volver' : 'Reprogramar Turno'}</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setMostrarModalCancelar(!mostrarModalCancelar);
-                                setModoReprogramar(false);
-                              }}
-                              className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                            >
-                              <X className="w-3.5 h-3.5 text-rose-600" />
-                              <span>Cancelar Turno</span>
-                            </button>
-                          </div>
-
-                          {/* Confirmación de Cancelación con motivo */}
-                          {mostrarModalCancelar && (
-                            <div className="p-3 bg-rose-50/50 border border-rose-200 rounded-xl space-y-2">
-                              <span className="font-bold text-xs text-rose-900 block">
-                                ¿Estás seguro de cancelar tu turno?
-                              </span>
-                              <input
-                                type="text"
-                                value={motivoCancelacion}
-                                onChange={e => setMotivoCancelacion(e.target.value)}
-                                placeholder="Motivo de cancelación (opcional)"
-                                className="w-full text-xs p-2 rounded-lg border border-rose-200 bg-white outline-none focus:border-rose-400"
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    try {
-                                      const res = await portalCancelarTurno({
-                                        p_token: turnoConsultadoActual.manageToken || turnoConsultadoActual.id,
-                                        p_motivo: motivoCancelacion.trim() || 'Cancelado por el paciente desde el portal',
-                                      });
-                                      if (res && res.turno_id) {
-                                        setMostrarModalCancelar(false);
-                                        setMensajeExitoAutogestion('El turno fue cancelado correctamente.');
-                                        setTimeout(() => setMensajeExitoAutogestion(null), 4000);
-                                      }
-                                    } catch (err: any) {
-                                      alert(traducirErrorBase(err?.message || 'error_general'));
-                                    }
-                                  }}
-                                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer"
-                                >
-                                  Confirmar Cancelación
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setMostrarModalCancelar(false)}
-                                  className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-                                >
-                                  Volver
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Interfaz de Reprogramación similar al Paso 2 */}
-                          {modoReprogramar && (
-                            <div className="p-3.5 bg-white border border-amber-300 rounded-2xl space-y-3.5 shadow-2xs">
-                              <div className="flex items-center justify-between pb-2 border-b border-amber-100">
+                              {/* Cabecera del turno */}
+                              <div className="flex flex-wrap items-start justify-between gap-2 pb-2.5 border-b border-slate-200">
                                 <div>
-                                  <span className="font-bold text-xs text-slate-900 block">
-                                    Elegí nueva fecha y horario
-                                  </span>
-                                  <span className="text-[11px] text-slate-500">
-                                    Basado en los turnos disponibles en la agenda
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <span className="text-[11px] text-slate-500 font-mono font-bold">
+                                      TURNO #{appt.id.slice(4, 10).toUpperCase()}
+                                    </span>
+                                    <span className="text-slate-300">·</span>
+                                    <span className="text-[11px] font-bold text-slate-700">
+                                      {idx + 1}º de {turnosConsultados.length}
+                                    </span>
+
+                                    {esElUltimo ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200 uppercase tracking-tight">
+                                        ★ Último turno agendado
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                        Turno anterior
+                                      </span>
+                                    )}
+                                  </div>
+                                  <strong className="text-sm text-slate-900 block">{appt.pacienteNombre}</strong>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                    appt.estado === 'atendido'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : appt.estado === 'pendiente'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                  }`}>
+                                    {appt.estado.toUpperCase()}
                                   </span>
                                 </div>
-                                <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                                  Reprogramación
-                                </span>
                               </div>
 
-                              {diasDisponiblesReprog.length > 0 ? (
-                                <>
-                                  {/* Tira Horizontal de Días */}
-                                  <div className="overflow-x-auto pb-1.5 scrollbar-none">
-                                    <div className="flex gap-2 min-w-max">
-                                      {diasDisponiblesReprog.slice(0, 14).map(dia => {
-                                        const isSelected = dia.fecha === fechaReprogramar;
-                                        return (
-                                          <button
-                                            key={dia.fecha}
-                                            type="button"
-                                            onClick={() => {
-                                              setFechaReprogramar(dia.fecha);
-                                              setHuecoReprogramar(null);
-                                            }}
-                                            className={`flex flex-col items-center justify-center min-w-[65px] py-2 px-1.5 rounded-xl border transition-all text-xs cursor-pointer ${
-                                              isSelected
-                                                ? 'bg-amber-600 text-white border-amber-600 shadow-sm font-semibold'
-                                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
-                                            }`}
+                              {/* Datos del turno */}
+                              <div className="grid grid-cols-2 gap-2 text-slate-700">
+                                <div>
+                                  <span className="text-slate-400 block text-[11px]">Fecha y Hora:</span>
+                                  <span className="font-semibold text-slate-900">
+                                    {formatearFechaLarga(appt.inicio)} · {formatearHora(appt.inicio)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-[11px]">Modalidad:</span>
+                                  <span className="font-semibold text-slate-900 capitalize">
+                                    {appt.modalidad === 'presencial' ? 'Presencial' : 'Videollamada'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-[11px]">Servicio:</span>
+                                  <span className="font-semibold text-slate-900">
+                                    {services.find(s => s.id === appt.serviceId)?.nombre || 'Consulta'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 block text-[11px]">Arancel Completo:</span>
+                                  <span className="font-bold text-slate-900 tabular-nums">
+                                    {formatearMoneda(appt.precioCentavos)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Ubicación Presencial */}
+                              {appt.modalidad === 'presencial' && (
+                                <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs">
+                                  <div className="flex items-start gap-2.5">
+                                    <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-0.5">
+                                        Ubicación de atención presencial:
+                                      </span>
+                                      <span className="font-bold text-slate-900 block text-xs">
+                                        {locActual.nombre}
+                                      </span>
+                                      <span className="text-slate-600 block text-xs mt-0.5">
+                                        {locActual.direccion}
+                                      </span>
+                                      {locActual.indicaciones && (
+                                        <span className="text-[11px] text-slate-500 italic block mt-1">
+                                          Indicaciones: {locActual.indicaciones}
+                                        </span>
+                                      )}
+                                      {locActual.mapsUrl && (
+                                        <div className="mt-2 pt-2 border-t border-slate-100 flex items-center">
+                                          <a
+                                            href={locActual.mapsUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-sky-700 hover:text-sky-900 hover:underline"
                                           >
-                                            <span className="text-[10px] tracking-wider uppercase opacity-85">
-                                              {dia.diaSemanaCorto}
-                                            </span>
-                                            <span className="text-base font-bold my-0.5 tabular-nums">
-                                              {dia.diaNumero}
-                                            </span>
-                                            <span className="text-[10px] opacity-85">
-                                              {dia.mesCorto}
-                                            </span>
-                                            <span className={`text-[9px] mt-1 px-1.5 py-0.2 rounded-full ${
-                                              isSelected ? 'bg-amber-700 text-white' : 'bg-white text-slate-600 border border-slate-200'
-                                            }`}>
-                                              {dia.cantidad} {dia.cantidad === 1 ? 'turno' : 'turnos'}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
+                                            <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
+                                            <span>Ver ubicación en Google Maps</span>
+                                          </a>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
+                                </div>
+                              )}
 
-                                  {/* Grilla de Horarios del día seleccionado */}
-                                  {diaReprogObj ? (
-                                    <div className="space-y-3 pt-1">
-                                      <div className="flex items-center justify-between text-xs">
-                                        <span className="font-semibold text-slate-800">
-                                          {diaReprogObj.fechaLegible}
+                              {/* Aviso Videollamada */}
+                              {appt.modalidad === 'videollamada' && (
+                                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
+                                  <Video className="w-4 h-4 text-emerald-700 shrink-0" />
+                                  <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
+                                </div>
+                              )}
+
+                              {/* Estado del Pago y Comprobante */}
+                              <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-slate-800">Estado del Pago:</span>
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    appt.estadoPago === 'pagado'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {appt.estadoPago === 'pagado' ? 'PAGADO ✓' : 'PENDIENTE DE PAGO'}
+                                  </span>
+                                </div>
+
+                                {appt.comprobantePago ? (
+                                  <div className="pt-2 border-t border-slate-100 text-[11px]">
+                                    <div className="flex items-center justify-between font-semibold">
+                                      <span>Comprobante Digital:</span>
+                                      <span className={`${
+                                        appt.comprobantePago.estado === 'aprobado'
+                                          ? 'text-emerald-700'
+                                          : appt.comprobantePago.estado === 'pendiente_revision'
+                                          ? 'text-amber-700'
+                                          : 'text-rose-700'
+                                      }`}>
+                                        {appt.comprobantePago.estado === 'aprobado'
+                                          ? 'Aprobado ✓'
+                                          : appt.comprobantePago.estado === 'pendiente_revision'
+                                          ? 'En revisión...'
+                                          : 'Observado ✗'}
+                                      </span>
+                                    </div>
+                                    {appt.comprobantePago.notasRevision && (
+                                      <div className="text-slate-500 italic mt-1">
+                                        «{appt.comprobantePago.notasRevision}»
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-600 space-y-2">
+                                    <p>
+                                      No registrás comprobante cargado. Podés transferir con alias <strong>{professional.aliasCobro}</strong> y subir tu comprobante acá:
+                                    </p>
+                                    <div className="border border-dashed border-emerald-300 rounded-xl p-3 text-center bg-emerald-50/40 hover:bg-emerald-50/70 transition-colors">
+                                      <input
+                                        type="file"
+                                        id={`consulta-comprobante-${appt.id}`}
+                                        accept="image/*,.pdf"
+                                        onChange={e => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            const reader = new FileReader();
+                                            reader.onload = ev => {
+                                              const url = ev.target?.result as string;
+                                              uploadPaymentProof(appt.id, {
+                                                url,
+                                                nombreArchivo: file.name,
+                                                montoCentavos: appt.precioCentavos,
+                                              });
+                                            };
+                                            reader.readAsDataURL(file);
+                                          }
+                                        }}
+                                        className="hidden"
+                                      />
+                                      <label
+                                        htmlFor={`consulta-comprobante-${appt.id}`}
+                                        className="cursor-pointer flex flex-col items-center justify-center gap-1"
+                                      >
+                                        <UploadCloud className="w-5 h-5 text-emerald-600" />
+                                        <span className="font-bold text-emerald-800 text-xs">
+                                          Adjuntar comprobante para este turno
                                         </span>
-                                        <span className="text-slate-500 text-[11px]">
-                                          {diaReprogObj.cantidad} disponibles
+                                        <span className="text-[10px] text-slate-500">
+                                          Foto o captura de pantalla (JPG, PNG o PDF)
                                         </span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Autogestión de Turno: Cancelar / Reprogramar según regla de último turno y estado Pendiente */}
+                              {appt.estado === 'pendiente' && (
+                                <div className="pt-2 border-t border-slate-200 space-y-3">
+                                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                                    <span>Plazo de autogestión:</span>
+                                    <span className="font-semibold text-slate-700">
+                                      Hasta {plazoHs} hs previas
+                                    </span>
+                                  </div>
+
+                                  {dentroDePlazo ? (
+                                    <div className="space-y-2.5">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {/* Botón Reprogramar: SOLO SI ES EL ÚLTIMO Y DE ESTADO PENDIENTE */}
+                                        {esReprogramable ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (modoReprogramar && turnoSeleccionadoParaReprogramar?.id === appt.id) {
+                                                setModoReprogramar(false);
+                                                setTurnoSeleccionadoParaReprogramar(null);
+                                              } else {
+                                                setTurnoSeleccionadoParaReprogramar(appt);
+                                                setModoReprogramar(true);
+                                                setMostrarModalCancelar(false);
+                                                setTurnoSeleccionadoParaCancelar(null);
+                                              }
+                                            }}
+                                            className="py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                                          >
+                                            <Clock className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>
+                                              {modoReprogramar && turnoSeleccionadoParaReprogramar?.id === appt.id
+                                                ? 'Ocultar Reprogramación'
+                                                : 'Reprogramar Turno (Último)'}
+                                            </span>
+                                          </button>
+                                        ) : (
+                                          <div
+                                            className="py-2 px-2.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-xl text-[11px] font-medium flex items-center justify-center gap-1.5 cursor-not-allowed select-none"
+                                            title="Por política de agenda, únicamente el último turno reservado puede ser reprogramado online"
+                                          >
+                                            <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            <span>No reprogramable (solo el último)</span>
+                                          </div>
+                                        )}
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (mostrarModalCancelar && turnoSeleccionadoParaCancelar?.id === appt.id) {
+                                              setMostrarModalCancelar(false);
+                                              setTurnoSeleccionadoParaCancelar(null);
+                                            } else {
+                                              setTurnoSeleccionadoParaCancelar(appt);
+                                              setMostrarModalCancelar(true);
+                                              setModoReprogramar(false);
+                                              setTurnoSeleccionadoParaReprogramar(null);
+                                            }
+                                          }}
+                                          className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                                        >
+                                          <X className="w-3.5 h-3.5 text-rose-600" />
+                                          <span>Cancelar Turno</span>
+                                        </button>
                                       </div>
 
-                                      {/* Mañana */}
-                                      {huecosReprogManana.length > 0 && (
-                                        <div>
-                                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                                            Mañana
+                                      {/* Panel de Cancelación para este turno */}
+                                      {mostrarModalCancelar && turnoSeleccionadoParaCancelar?.id === appt.id && (
+                                        <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2">
+                                          <span className="font-bold text-xs text-rose-900 block">
+                                            ¿Estás seguro de cancelar el turno #{appt.id.slice(4, 10).toUpperCase()} del {formatearFechaLarga(appt.inicio)} a las {formatearHora(appt.inicio)}?
                                           </span>
-                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                                            {huecosReprogManana.map((h, idx) => {
-                                              const isSlotSelected = huecoReprogramar?.inicio === h.inicio;
-                                              return (
-                                                <button
-                                                  key={`reprog-m-${h.inicio}-${idx}`}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setHuecoReprogramar(h);
-                                                    if (h.modalidades.length === 1) {
-                                                      setModalidadReprogramar(h.modalidades[0]);
-                                                    } else if (!h.modalidades.includes(modalidadReprogramar)) {
-                                                      setModalidadReprogramar(h.modalidades[0]);
-                                                    }
-                                                    if (h.locationIds && h.locationIds.length > 0) {
-                                                      setSedeReprogramarId(h.locationIds[0]);
-                                                    }
-                                                  }}
-                                                  className={`py-2 px-1.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
-                                                    isSlotSelected
-                                                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-600/30'
-                                                      : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/40'
-                                                  }`}
-                                                >
-                                                  <span className="font-bold tabular-nums text-xs sm:text-sm">
-                                                    {formatearHora(h.inicio).replace(' hs', '')}
-                                                  </span>
-                                                  <span className={`text-[10px] flex items-center gap-0.5 ${
-                                                    isSlotSelected ? 'text-amber-100' : 'text-slate-500'
-                                                  }`}>
-                                                    {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
-                                                      <>
-                                                        <Video className="w-2.5 h-2.5" /> Videollamada
-                                                      </>
-                                                    ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
-                                                      <>
-                                                        <MapPin className="w-2.5 h-2.5" /> Presencial
-                                                      </>
-                                                    ) : (
-                                                      'Pres./Videollamada'
-                                                    )}
-                                                  </span>
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Tarde */}
-                                      {huecosReprogTarde.length > 0 && (
-                                        <div>
-                                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                                            Tarde
-                                          </span>
-                                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                                            {huecosReprogTarde.map((h, idx) => {
-                                              const isSlotSelected = huecoReprogramar?.inicio === h.inicio;
-                                              return (
-                                                <button
-                                                  key={`reprog-t-${h.inicio}-${idx}`}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setHuecoReprogramar(h);
-                                                    if (h.modalidades.length === 1) {
-                                                      setModalidadReprogramar(h.modalidades[0]);
-                                                    } else if (!h.modalidades.includes(modalidadReprogramar)) {
-                                                      setModalidadReprogramar(h.modalidades[0]);
-                                                    }
-                                                    if (h.locationIds && h.locationIds.length > 0) {
-                                                      setSedeReprogramarId(h.locationIds[0]);
-                                                    }
-                                                  }}
-                                                  className={`py-2 px-1.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
-                                                    isSlotSelected
-                                                      ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-600/30'
-                                                      : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/40'
-                                                  }`}
-                                                >
-                                                  <span className="font-bold tabular-nums text-xs sm:text-sm">
-                                                    {formatearHora(h.inicio).replace(' hs', '')}
-                                                  </span>
-                                                  <span className={`text-[10px] flex items-center gap-0.5 ${
-                                                    isSlotSelected ? 'text-amber-100' : 'text-slate-500'
-                                                  }`}>
-                                                    {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
-                                                      <>
-                                                        <Video className="w-2.5 h-2.5" /> Videollamada
-                                                      </>
-                                                    ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
-                                                      <>
-                                                        <MapPin className="w-2.5 h-2.5" /> Presencial
-                                                      </>
-                                                    ) : (
-                                                      'Pres./Videollamada'
-                                                    )}
-                                                  </span>
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* Selector de Modalidad si el horario elegido admite ambas */}
-                                      {huecoReprogramar && huecoReprogramar.modalidades.length > 1 && (
-                                        <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
-                                          <label className="text-[11px] font-bold text-slate-800 block mb-1.5">
-                                            ¿Cómo preferís atenderte?
-                                          </label>
-                                          <div className="grid grid-cols-2 gap-2">
+                                          <input
+                                            type="text"
+                                            value={motivoCancelacion}
+                                            onChange={e => setMotivoCancelacion(e.target.value)}
+                                            placeholder="Motivo de cancelación (opcional)"
+                                            className="w-full text-xs p-2 rounded-lg border border-rose-200 bg-white outline-none focus:border-rose-400"
+                                          />
+                                          <div className="flex gap-2">
                                             <button
                                               type="button"
-                                              onClick={() => setModalidadReprogramar('presencial')}
-                                              className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                                                modalidadReprogramar === 'presencial'
-                                                  ? 'bg-white border-amber-600 text-amber-800 shadow-2xs ring-1 ring-amber-500'
-                                                  : 'bg-white/80 text-slate-600 border-slate-200 hover:bg-white'
-                                              }`}
+                                              onClick={async () => {
+                                                try {
+                                                  const res = await portalCancelarTurno({
+                                                    p_token: appt.manageToken || appt.id,
+                                                    p_motivo: motivoCancelacion.trim() || 'Cancelado por el paciente desde el portal',
+                                                  });
+                                                  if (res && res.turno_id) {
+                                                    setMostrarModalCancelar(false);
+                                                    setTurnoSeleccionadoParaCancelar(null);
+                                                    setMotivoCancelacion('');
+                                                    setMensajeExitoAutogestion('El turno fue cancelado correctamente.');
+                                                    setTimeout(() => setMensajeExitoAutogestion(null), 5000);
+                                                  }
+                                                } catch (err: any) {
+                                                  alert(traducirErrorBase(err?.message || 'error_general'));
+                                                }
+                                              }}
+                                              className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer"
                                             >
-                                              <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                                              <span>Presencial</span>
+                                              Confirmar Cancelación
                                             </button>
                                             <button
                                               type="button"
-                                              onClick={() => setModalidadReprogramar('videollamada')}
-                                              className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                                                modalidadReprogramar === 'videollamada'
-                                                  ? 'bg-white border-emerald-600 text-emerald-800 shadow-2xs ring-1 ring-emerald-500'
-                                                  : 'bg-white/80 text-slate-600 border-slate-200 hover:bg-white'
-                                              }`}
+                                              onClick={() => {
+                                                setMostrarModalCancelar(false);
+                                                setTurnoSeleccionadoParaCancelar(null);
+                                              }}
+                                              className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
                                             >
-                                              <Video className="w-3.5 h-3.5 text-emerald-600" />
-                                              <span>Videollamada</span>
+                                              Volver
                                             </button>
                                           </div>
                                         </div>
                                       )}
 
-                                      {/* Si es videollamada: SOLO aviso informativo, NUNCA mostrar ubicación */}
-                                      {huecoReprogramar && modalidadReprogramar === 'videollamada' && (
-                                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
-                                          <Video className="w-4 h-4 text-emerald-700 shrink-0" />
-                                          <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
-                                        </div>
-                                      )}
-
-                                      {/* Ubicación Presencial: SOLO si seleccionó horario y modalidad presencial */}
-                                      {huecoReprogramar && modalidadReprogramar === 'presencial' && (
-                                        <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-xs">
-                                          <div className="flex items-start gap-2">
-                                            <MapPin className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                                            <div className="flex-1 min-w-0">
-                                              <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wide block mb-1">
-                                                Consultorio de atención presencial:
+                                      {/* Panel de Reprogramación: SOLO PARA EL ÚLTIMO TURNO */}
+                                      {modoReprogramar && turnoSeleccionadoParaReprogramar?.id === appt.id && (
+                                        <div className="p-3.5 bg-white border border-amber-300 rounded-2xl space-y-3.5 shadow-2xs">
+                                          <div className="flex items-center justify-between pb-2 border-b border-amber-100">
+                                            <div>
+                                              <span className="font-bold text-xs text-slate-900 block">
+                                                Elegí nueva fecha y horario para tu último turno (#{appt.id.slice(4, 10).toUpperCase()})
                                               </span>
+                                              <span className="text-[11px] text-slate-500">
+                                                Basado en la disponibilidad actual de la agenda
+                                              </span>
+                                            </div>
+                                            <span className="text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                              Reprogramación
+                                            </span>
+                                          </div>
 
-                                              {/* Dropdown SOLO si hay más de 1 sede para este día y horario */}
-                                              {ubicacionesReprogPresenciales.length > 1 && (
-                                                <select
-                                                  value={consultorioReprogPresencial.id}
-                                                  onChange={e => setSedeReprogramarId(e.target.value)}
-                                                  className="w-full text-xs bg-white border border-slate-300 focus:border-amber-600 rounded-lg p-2 text-slate-800 font-medium shadow-2xs mb-2"
-                                                >
-                                                  {ubicacionesReprogPresenciales.map(loc => (
-                                                    <option key={loc.id} value={loc.id}>
-                                                      {loc.nombre} — {loc.direccion}
-                                                    </option>
-                                                  ))}
-                                                </select>
-                                              )}
-
-                                              <div>
-                                                <span className="font-bold text-slate-800 block text-xs">
-                                                  {consultorioReprogPresencial.nombre}
-                                                </span>
-                                                <span className="text-slate-600 block text-xs mt-0.5">
-                                                  {consultorioReprogPresencial.direccion}
-                                                </span>
-                                                {consultorioReprogPresencial.indicaciones && (
-                                                  <span className="text-[11px] text-slate-500 italic block mt-1">
-                                                    Indicaciones: {consultorioReprogPresencial.indicaciones}
-                                                  </span>
-                                                )}
+                                          {diasDisponiblesReprog.length > 0 ? (
+                                            <>
+                                              {/* Tira Horizontal de Días */}
+                                              <div className="overflow-x-auto pb-1.5 scrollbar-none">
+                                                <div className="flex gap-2 min-w-max">
+                                                  {diasDisponiblesReprog.slice(0, 14).map(dia => {
+                                                    const isSelected = dia.fecha === fechaReprogramar;
+                                                    return (
+                                                      <button
+                                                        key={dia.fecha}
+                                                        type="button"
+                                                        onClick={() => {
+                                                          setFechaReprogramar(dia.fecha);
+                                                          setHuecoReprogramar(null);
+                                                        }}
+                                                        className={`flex flex-col items-center justify-center min-w-[65px] py-2 px-1.5 rounded-xl border transition-all text-xs cursor-pointer ${
+                                                          isSelected
+                                                            ? 'bg-amber-600 text-white border-amber-600 shadow-sm font-semibold'
+                                                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
+                                                        }`}
+                                                      >
+                                                        <span className="text-[10px] tracking-wider uppercase opacity-85">
+                                                          {dia.diaSemanaCorto}
+                                                        </span>
+                                                        <span className="text-base font-bold my-0.5 tabular-nums">
+                                                          {dia.diaNumero}
+                                                        </span>
+                                                        <span className="text-[10px] opacity-85">
+                                                          {dia.mesCorto}
+                                                        </span>
+                                                        <span className={`text-[9px] mt-1 px-1.5 py-0.2 rounded-full ${
+                                                          isSelected ? 'bg-amber-700 text-white' : 'bg-white text-slate-600 border border-slate-200'
+                                                        }`}>
+                                                          {dia.cantidad} {dia.cantidad === 1 ? 'turno' : 'turnos'}
+                                                        </span>
+                                                      </button>
+                                                    );
+                                                  })}
+                                                </div>
                                               </div>
 
-                                              {consultorioReprogPresencial.mapsUrl && (
-                                                <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center">
-                                                  <a
-                                                    href={consultorioReprogPresencial.mapsUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline"
-                                                  >
-                                                    <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
-                                                    <span>Ver ubicación en Google Maps</span>
-                                                  </a>
+                                              {/* Grilla de Horarios del día seleccionado */}
+                                              {diaReprogObj ? (
+                                                <div className="space-y-3 pt-1">
+                                                  <div className="flex items-center justify-between text-xs">
+                                                    <span className="font-semibold text-slate-800">
+                                                      {diaReprogObj.fechaLegible}
+                                                    </span>
+                                                    <span className="text-slate-500 text-[11px]">
+                                                      {diaReprogObj.cantidad} disponibles
+                                                    </span>
+                                                  </div>
+
+                                                  {/* Mañana */}
+                                                  {huecosReprogManana.length > 0 && (
+                                                    <div>
+                                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                        Mañana
+                                                      </span>
+                                                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                                        {huecosReprogManana.map((h, hIdx) => {
+                                                          const isSlotSelected = huecoReprogramar?.inicio === h.inicio;
+                                                          return (
+                                                            <button
+                                                              key={`reprog-m-${h.inicio}-${hIdx}`}
+                                                              type="button"
+                                                              onClick={() => {
+                                                                setHuecoReprogramar(h);
+                                                                if (h.modalidades.length === 1) {
+                                                                  setModalidadReprogramar(h.modalidades[0]);
+                                                                } else if (!h.modalidades.includes(modalidadReprogramar)) {
+                                                                  setModalidadReprogramar(h.modalidades[0]);
+                                                                }
+                                                                if (h.locationIds && h.locationIds.length > 0) {
+                                                                  setSedeReprogramarId(h.locationIds[0]);
+                                                                }
+                                                              }}
+                                                              className={`py-2 px-1.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                                                                isSlotSelected
+                                                                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-600/30'
+                                                                  : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/40'
+                                                              }`}
+                                                            >
+                                                              <span className="font-bold tabular-nums text-xs sm:text-sm">
+                                                                {formatearHora(h.inicio).replace(' hs', '')}
+                                                              </span>
+                                                              <span className={`text-[10px] flex items-center gap-0.5 ${
+                                                                isSlotSelected ? 'text-amber-100' : 'text-slate-500'
+                                                              }`}>
+                                                                {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
+                                                                  <>
+                                                                    <Video className="w-2.5 h-2.5" /> Videollamada
+                                                                  </>
+                                                                ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
+                                                                  <>
+                                                                    <MapPin className="w-2.5 h-2.5" /> Presencial
+                                                                  </>
+                                                                ) : (
+                                                                  'Pres./Videollamada'
+                                                                )}
+                                                              </span>
+                                                            </button>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    </div>
+                                                  )}
+
+                                                  {/* Tarde */}
+                                                  {huecosReprogTarde.length > 0 && (
+                                                    <div>
+                                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                                                        Tarde
+                                                      </span>
+                                                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                                        {huecosReprogTarde.map((h, hIdx) => {
+                                                          const isSlotSelected = huecoReprogramar?.inicio === h.inicio;
+                                                          return (
+                                                            <button
+                                                              key={`reprog-t-${h.inicio}-${hIdx}`}
+                                                              type="button"
+                                                              onClick={() => {
+                                                                setHuecoReprogramar(h);
+                                                                if (h.modalidades.length === 1) {
+                                                                  setModalidadReprogramar(h.modalidades[0]);
+                                                                } else if (!h.modalidades.includes(modalidadReprogramar)) {
+                                                                  setModalidadReprogramar(h.modalidades[0]);
+                                                                }
+                                                                if (h.locationIds && h.locationIds.length > 0) {
+                                                                  setSedeReprogramarId(h.locationIds[0]);
+                                                                }
+                                                              }}
+                                                              className={`py-2 px-1.5 rounded-lg border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                                                                isSlotSelected
+                                                                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-2 ring-amber-600/30'
+                                                                  : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/40'
+                                                              }`}
+                                                            >
+                                                              <span className="font-bold tabular-nums text-xs sm:text-sm">
+                                                                {formatearHora(h.inicio).replace(' hs', '')}
+                                                              </span>
+                                                              <span className={`text-[10px] flex items-center gap-0.5 ${
+                                                                isSlotSelected ? 'text-amber-100' : 'text-slate-500'
+                                                              }`}>
+                                                                {h.modalidades.includes('videollamada') && !h.modalidades.includes('presencial') ? (
+                                                                  <>
+                                                                    <Video className="w-2.5 h-2.5" /> Videollamada
+                                                                  </>
+                                                                ) : h.modalidades.includes('presencial') && !h.modalidades.includes('videollamada') ? (
+                                                                  <>
+                                                                    <MapPin className="w-2.5 h-2.5" /> Presencial
+                                                                  </>
+                                                                ) : (
+                                                                  'Pres./Videollamada'
+                                                                )}
+                                                              </span>
+                                                            </button>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    </div>
+                                                  )}
+
+                                                  {/* Modalidad si el horario admite ambas */}
+                                                  {huecoReprogramar && huecoReprogramar.modalidades.length > 1 && (
+                                                    <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
+                                                      <label className="text-[11px] font-bold text-slate-800 block mb-1.5">
+                                                        ¿Cómo preferís atenderte?
+                                                      </label>
+                                                      <div className="grid grid-cols-2 gap-2">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => setModalidadReprogramar('presencial')}
+                                                          className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                                            modalidadReprogramar === 'presencial'
+                                                              ? 'bg-white border-amber-600 text-amber-800 shadow-2xs ring-1 ring-amber-500'
+                                                              : 'bg-white/80 text-slate-600 border-slate-200 hover:bg-white'
+                                                          }`}
+                                                        >
+                                                          <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                                                          <span>Presencial</span>
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => setModalidadReprogramar('videollamada')}
+                                                          className={`p-2 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                                            modalidadReprogramar === 'videollamada'
+                                                              ? 'bg-white border-emerald-600 text-emerald-800 shadow-2xs ring-1 ring-emerald-500'
+                                                              : 'bg-white/80 text-slate-600 border-slate-200 hover:bg-white'
+                                                          }`}
+                                                        >
+                                                          <Video className="w-3.5 h-3.5 text-emerald-600" />
+                                                          <span>Videollamada</span>
+                                                        </button>
+                                                      </div>
+                                                    </div>
+                                                  )}
+
+                                                  {/* Videollamada notice */}
+                                                  {huecoReprogramar && modalidadReprogramar === 'videollamada' && (
+                                                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2">
+                                                      <Video className="w-4 h-4 text-emerald-700 shrink-0" />
+                                                      <span>Videollamada: El profesional se comunicará por WhatsApp al horario del turno.</span>
+                                                    </div>
+                                                  )}
+
+                                                  {/* Ubicación Presencial */}
+                                                  {huecoReprogramar && modalidadReprogramar === 'presencial' && (
+                                                    <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 text-xs">
+                                                      <div className="flex items-start gap-2">
+                                                        <MapPin className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                                        <div className="flex-1 min-w-0">
+                                                          <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wide block mb-1">
+                                                            Consultorio de atención presencial:
+                                                          </span>
+
+                                                          {ubicacionesReprogPresenciales.length > 1 && (
+                                                            <select
+                                                              value={consultorioReprogPresencial.id}
+                                                              onChange={e => setSedeReprogramarId(e.target.value)}
+                                                              className="w-full text-xs bg-white border border-slate-300 focus:border-amber-600 rounded-lg p-2 text-slate-800 font-medium shadow-2xs mb-2"
+                                                            >
+                                                              {ubicacionesReprogPresenciales.map(loc => (
+                                                                <option key={loc.id} value={loc.id}>
+                                                                  {loc.nombre} — {loc.direccion}
+                                                                </option>
+                                                              ))}
+                                                            </select>
+                                                          )}
+
+                                                          <div>
+                                                            <span className="font-bold text-slate-800 block text-xs">
+                                                              {consultorioReprogPresencial.nombre}
+                                                            </span>
+                                                            <span className="text-slate-600 block text-xs mt-0.5">
+                                                              {consultorioReprogPresencial.direccion}
+                                                            </span>
+                                                            {consultorioReprogPresencial.indicaciones && (
+                                                              <span className="text-[11px] text-slate-500 italic block mt-1">
+                                                                Indicaciones: {consultorioReprogPresencial.indicaciones}
+                                                              </span>
+                                                            )}
+                                                          </div>
+
+                                                          {consultorioReprogPresencial.mapsUrl && (
+                                                            <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center">
+                                                              <a
+                                                                href={consultorioReprogPresencial.mapsUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 hover:text-amber-950 hover:underline"
+                                                              >
+                                                                <ExternalLink className="w-3.5 h-3.5 text-amber-700" />
+                                                                <span>Ver ubicación en Google Maps</span>
+                                                              </a>
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl text-xs">
+                                                  No hay turnos disponibles para el día seleccionado.
                                                 </div>
                                               )}
+                                            </>
+                                          ) : (
+                                            <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl text-xs">
+                                              No hay turnos disponibles para reprogramar en la agenda actualmente.
                                             </div>
-                                          </div>
+                                          )}
+
+                                          {/* Botón confirmar reprogramación */}
+                                          <button
+                                            type="button"
+                                            disabled={!huecoReprogramar}
+                                            onClick={async () => {
+                                              if (!huecoReprogramar) return;
+                                              try {
+                                                const holdRes = await portalCrearHold({
+                                                  p_ref: professional.slug,
+                                                  p_servicio_id: appt.serviceId,
+                                                  p_inicio: huecoReprogramar.inicio,
+                                                  p_modalidad: modalidadReprogramar,
+                                                  p_sede_id: modalidadReprogramar === 'presencial' ? (sedeReprogramarId || consultorioReprogPresencial.id) : undefined,
+                                                  p_session_id: sessionToken,
+                                                });
+
+                                                const res = await portalReprogramarTurno({
+                                                  p_token: appt.manageToken || appt.id,
+                                                  p_hold_id: holdRes.hold_id,
+                                                  p_session_id: sessionToken,
+                                                });
+
+                                                if (res && res.turno_id) {
+                                                  setModoReprogramar(false);
+                                                  setTurnoSeleccionadoParaReprogramar(null);
+                                                  setHuecoReprogramar(null);
+                                                  setFechaReprogramar('');
+                                                  setMensajeExitoAutogestion('¡Turno reprogramado exitosamente!');
+                                                  setTimeout(() => setMensajeExitoAutogestion(null), 5000);
+                                                }
+                                              } catch (err: any) {
+                                                alert(traducirErrorBase(err?.message || 'error_general'));
+                                              }
+                                            }}
+                                            className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 ${
+                                              huecoReprogramar
+                                                ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
+                                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                            }`}
+                                          >
+                                            <Check className="w-3.5 h-3.5" />
+                                            <span>Confirmar Cambio de Turno</span>
+                                          </button>
                                         </div>
                                       )}
                                     </div>
                                   ) : (
-                                    <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl text-xs">
-                                      No hay turnos disponibles para el día seleccionado.
+                                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                                      <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                      <span>
+                                        El plazo límite para cancelar o reprogramar online ({plazoHs} hs previas) ha vencido. Por favor contactate por WhatsApp con el consultorio.
+                                      </span>
                                     </div>
                                   )}
-                                </>
-                              ) : (
-                                <div className="p-4 text-center text-slate-500 bg-slate-50 rounded-xl text-xs">
-                                  No hay turnos disponibles para reprogramar en la agenda actualmente.
                                 </div>
                               )}
 
-                              {/* Botón de confirmación */}
-                              <button
-                                type="button"
-                                disabled={!huecoReprogramar}
-                                onClick={async () => {
-                                  if (!huecoReprogramar) return;
-                                  try {
-                                    const holdRes = await portalCrearHold({
-                                      p_ref: professional.slug,
-                                      p_servicio_id: turnoConsultadoActual.serviceId,
-                                      p_inicio: huecoReprogramar.inicio,
-                                      p_modalidad: modalidadReprogramar,
-                                      p_sede_id: modalidadReprogramar === 'presencial' ? (sedeReprogramarId || consultorioReprogPresencial.id) : undefined,
-                                      p_session_id: sessionToken,
-                                    });
-
-                                    const res = await portalReprogramarTurno({
-                                      p_token: turnoConsultadoActual.manageToken || turnoConsultadoActual.id,
-                                      p_hold_id: holdRes.hold_id,
-                                      p_session_id: sessionToken,
-                                    });
-
-                                    if (res && res.turno_id) {
-                                      setModoReprogramar(false);
-                                      setHuecoReprogramar(null);
-                                      setFechaReprogramar('');
-                                      setMensajeExitoAutogestion('¡Turno reprogramado exitosamente!');
-                                      setTimeout(() => setMensajeExitoAutogestion(null), 4000);
-                                    }
-                                  } catch (err: any) {
-                                    alert(traducirErrorBase(err?.message || 'error_general'));
-                                  }
-                                }}
-                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 ${
-                                  huecoReprogramar
-                                    ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
-                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                }`}
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Confirmar Cambio de Turno</span>
-                              </button>
+                              {/* Contacto por WhatsApp para este turno */}
+                              <div className="pt-1 flex flex-col gap-2">
+                                <a
+                                  href={`https://wa.me/${appt.pacienteTelefono}?text=${encodeURIComponent(
+                                    `Hola ${professional.titulo} ${professional.nombre}, te escribo por mi turno #${appt.id.slice(4, 10).toUpperCase()} del ${formatearFechaLarga(appt.inicio)} a las ${formatearHora(appt.inicio)}.`
+                                  )}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>Contactar al consultorio por WhatsApp por este turno</span>
+                                </a>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                          <span>
-                            {infoTurnoAutogestion?.motivo_no_cancelable ||
-                              `El plazo límite para cancelar o reprogramar online (${infoTurnoAutogestion?.plazo_cancelacion_hs || professional.parametros.plazoCancelacionHoras || 12} hs previas) ha vencido. Por favor contactate por WhatsApp con el consultorio.`}
-                          </span>
-                        </div>
-                      )}
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
-
-                  {/* Acciones para el turno consultado */}
-                  <div className="pt-1 flex flex-col gap-2">
-                    {/* Botón WhatsApp */}
-                    <a
-                      href={`https://wa.me/${turnoConsultadoActual.pacienteTelefono}?text=${encodeURIComponent(`Hola ${professional.titulo} ${professional.nombre}, te escribo por mi turno del ${formatearFechaLarga(turnoConsultadoActual.inicio)} a las ${formatearHora(turnoConsultadoActual.inicio)}.`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Contactar al consultorio por WhatsApp</span>
-                    </a>
-                  </div>
-
                 </div>
               )}
 
@@ -2642,8 +2859,12 @@ export const PatientPortal: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setModalConsultarTurno(false);
-                    setTurnoConsultado(null);
+                    setDniPacienteConsultado(null);
                     setErrorConsulta('');
+                    setModoReprogramar(false);
+                    setTurnoSeleccionadoParaReprogramar(null);
+                    setMostrarModalCancelar(false);
+                    setTurnoSeleccionadoParaCancelar(null);
                   }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
                 >
