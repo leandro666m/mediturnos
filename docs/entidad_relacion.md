@@ -72,8 +72,6 @@ erDiagram
         int horizonte_maximo_dias "Máximo horizonte futuro (1-365)"
         int margen_entre_turnos_min "Descanso entre turnos consecutivos"
         int plazo_cancelacion_hs "Límite para cancelar o reprogramar"
-        time horario_silencio_inicio "Inicio quiet hours (22:00)"
-        time horario_silencio_fin "Fin quiet hours (08:00)"
         timestamptz created_at
         timestamptz updated_at
     }

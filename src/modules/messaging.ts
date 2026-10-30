@@ -14,46 +14,29 @@ export const BLOQUE_VIDEOLLAMADA_DEFAULT =
 
 export const CUERPO_CONFIRMACION_DEFAULT =
   `Hola {paciente} 🙋‍♂️ Tu turno con {profesional} el 📆 {fecha} ⌚ {hora} quedará confirmado una vez abonado.
-
 Alias: {alias}
-
 Valor: {valor}
-
 🩺 Consulta: {servicio}
-
-{bloque_modalidad}
-
-⏰ Te recordaremos un par de horas antes 😉`;
+{bloque_modalidad}`;
 
 export const CUERPO_RECORDATORIO_DEFAULT =
   `Hola {paciente} 🙋‍♂️ Te escribo del consultorio de {profesional} para recordarte tu turno:
-
 📆 Fecha: {fecha}
-
 ⌚ Horario: {hora}
-
 🩺 Consulta: {servicio}
-
 {bloque_modalidad}
-
 Por favor avisanos con anticipación si necesitás reprogramar. ¡Muchas gracias!`;
 
 export const CUERPO_REPROGRAMACION_DEFAULT =
   `Hola {paciente} 🙋‍♂️ Te confirmamos que tu turno con {profesional} ha sido reprogramado:
-
 📆 Nueva Fecha: {fecha}
-
 ⌚ Nuevo Horario: {hora}
-
 🩺 Consulta: {servicio}
-
 {bloque_modalidad}
-
 ¡Te esperamos!`;
 
 export const CUERPO_CANCELACION_DEFAULT =
   `Hola {paciente} 🙋‍♂️ Te informamos que tu turno con {profesional} del 📆 {fecha} a las ⌚ {hora} ha sido cancelado.
-
 Podés ingresar nuevamente al enlace del consultorio para elegir un nuevo horario cuando lo desees:
 👉 {link_gestionar}`;
 
@@ -134,27 +117,6 @@ export function resolverPlantillaMensaje(
   }
 
   return texto.trim();
-}
-
-/**
- * Verifica si la hora actual cae en el horario de descanso configurado (quiet hours, por defecto 22:00 a 08:00)
- */
-export function estaEnHorarioDescanso(
-  quietHoursInicio = '22:00',
-  quietHoursFin = '08:00',
-  ahora = new Date()
-): boolean {
-  const horaActual = ahora.getHours() + ahora.getMinutes() / 60;
-  const [iniH, iniM] = quietHoursInicio.split(':').map(Number);
-  const [finH, finM] = quietHoursFin.split(':').map(Number);
-  const inicio = iniH + iniM / 60;
-  const fin = finH + finM / 60;
-
-  // Si cruza la medianoche (ej 22:00 a 08:00)
-  if (inicio > fin) {
-    return horaActual >= inicio || horaActual < fin;
-  }
-  return horaActual >= inicio && horaActual < fin;
 }
 
 /**

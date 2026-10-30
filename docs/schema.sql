@@ -93,8 +93,6 @@ create table if not exists public.profesionales (
   horizonte_maximo_dias   int  not null default 30,
   margen_entre_turnos_min int  not null default 0,
   plazo_cancelacion_hs    int  not null default 24,   -- horas de anticipación mínimas para cancelar o reprogramar
-  horario_silencio_inicio time not null default '22:00',
-  horario_silencio_fin    time not null default '08:00',
   created_at              timestamptz not null default now(),
   updated_at              timestamptz not null default now(),
 

@@ -25,6 +25,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { FontSizePreference, Location } from '../../types';
 import { normalizarTelefonoArgentino } from '../../modules/format';
+import { createDataId } from '../../data/ids';
 
 interface PerfilModalProps {
   isOpen: boolean;
@@ -169,7 +170,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
 
     if (modoEdicionLocId === 'nueva') {
       const nueva: Location = {
-        id: `loc-${Date.now()}`,
+        id: createDataId('loc-'),
         nombre: locNombre.trim(),
         direccion: locDireccion.trim(),
         indicaciones: locIndicaciones.trim() || undefined,

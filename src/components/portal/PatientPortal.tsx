@@ -45,7 +45,7 @@ import {
 import { generarArchivoIcs } from '../../modules/calendar';
 import { Appointment, HuecoDisponibilidad, Modalidad, Service } from '../../types';
 import { traducirErrorBase } from '../../data/mappers';
-import { INITIAL_LOCATIONS } from '../../data/mockData';
+import type { PortalVerTurnoResult } from '../../data/repository';
 
 export const PatientPortal: React.FC = () => {
   const {
@@ -98,7 +98,7 @@ export const PatientPortal: React.FC = () => {
     // 4. Primera ubicación en lista
     if (locations.length > 0) return locations[0];
     // 5. Fallback canónico si no hubiese sedes en memoria
-    return INITIAL_LOCATIONS[0];
+    return { id: '', nombre: '', direccion: '', activa: false };
   }, [huecoSeleccionado, direccionElegidaId, locations]);
 
   // Mantener direccionElegidaId sincronizado reactivamente con consultorioPresencial
@@ -139,6 +139,7 @@ export const PatientPortal: React.FC = () => {
 
   // Modal para consultar / autogestión de turnos reservados (Soporta búsqueda por DNI o Manage Token)
   const [modalConsultarTurno, setModalConsultarTurno] = useState(false);
+  const [portalTurnoConsultado, setPortalTurnoConsultado] = useState<PortalVerTurnoResult | null>(null);
   const [dniConsulta, setDniConsulta] = useState('');
   const [dniPacienteConsultado, setDniPacienteConsultado] = useState<string | null>(null);
   const [turnoSeleccionadoParaReprogramar, setTurnoSeleccionadoParaReprogramar] = useState<Appointment | null>(null);
@@ -318,14 +319,12 @@ export const PatientPortal: React.FC = () => {
       }
       const res = await portalVerTurno({ p_token: cleanToken });
       if (res && res.turno_id) {
-        const found = appointments.find(a => a.id === res.turno_id || a.manageToken === cleanToken);
-        if (found) {
-          setDniConsulta(found.pacienteDni);
-          setDniPacienteConsultado(found.pacienteDni);
-          setModalConsultarTurno(true);
-          setErrorConsulta('');
-          return true;
-        }
+        setDniConsulta(cleanToken);
+        setPortalTurnoConsultado(res);
+        setModalConsultarTurno(true);
+        setDniPacienteConsultado(null);
+        setErrorConsulta('');
+        return true;
       }
     } catch (e: any) {
       setErrorConsulta(traducirErrorBase(e?.message || 'turno_no_encontrado'));
@@ -358,7 +357,7 @@ export const PatientPortal: React.FC = () => {
         p_servicio_id: servicioSeleccionado.id,
         p_inicio: huecoSeleccionado.inicio,
         p_modalidad: modalidadElegida,
-        p_sede_id: modalidadElegida === 'presencial' ? (direccionElegidaId || consultorioPresencial.id) : undefined,
+        p_sede_id: modalidadElegida === 'presencial' ? (direccionElegidaId || consultorioPresencial.id || undefined) : undefined,
         p_session_id: sessionToken,
       });
 
@@ -572,16 +571,16 @@ export const PatientPortal: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 py-6 px-3 sm:px-6 flex flex-col items-center">
-      
+
       {/* Botón flotante para alternar vista móvil y botón PWA */}
-      <div className="w-full max-w-2xl mb-4 flex justify-between items-center text-xs text-slate-500">
+     {/*  <div className="w-full max-w-2xl mb-4 flex justify-between items-center text-xs text-slate-500">
         <div className="flex items-center gap-1.5 font-medium">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           <span>Portal del Paciente en vivo (PWA)</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2"> */}
           {/* Botón aA para alternar entre tamaño Estándar y Grande */}
-          <button
+          {/* <button
             type="button"
             onClick={toggleTamanoFuentePaciente}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold transition-all cursor-pointer shadow-2xs ${
@@ -620,7 +619,8 @@ export const PatientPortal: React.FC = () => {
             <span>{modoMarcoMovil ? 'Ver pantalla completa' : 'Simular vista smartphone'}</span>
           </button>
         </div>
-      </div>
+      </div> */}
+
 
       {/* Contenedor Principal (simulador de móvil o contenedor responsivo) */}
       <div
@@ -1799,6 +1799,7 @@ export const PatientPortal: React.FC = () => {
                 onClick={() => {
                   setModalConsultarTurno(false);
                   setDniPacienteConsultado(null);
+                  setPortalTurnoConsultado(null);
                   setErrorConsulta('');
                   setModoReprogramar(false);
                   setTurnoSeleccionadoParaReprogramar(null);
@@ -1810,6 +1811,30 @@ export const PatientPortal: React.FC = () => {
                 ✕
               </button>
             </div>
+
+            {portalTurnoConsultado && (
+              <div className="mb-5 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm">
+                <p className="font-bold text-slate-900">{portalTurnoConsultado.servicio}</p>
+                <p className="mt-1 text-slate-700">{formatearFechaLarga(portalTurnoConsultado.inicio)} · {formatearHora(portalTurnoConsultado.inicio)}</p>
+                <p className="mt-1 text-slate-600">Estado: {portalTurnoConsultado.estado} · {portalTurnoConsultado.modalidad}</p>
+                {portalTurnoConsultado.sede && <p className="mt-1 text-slate-600">{portalTurnoConsultado.sede.nombre} · {portalTurnoConsultado.sede.direccion}</p>}
+                {portalTurnoConsultado.puede_cancelar && (
+                  <button type="button" className="mt-3 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700"
+                    onClick={async () => {
+                      try {
+                        await portalCancelarTurno({ p_token: dniConsulta });
+                        const refreshed = await portalVerTurno({ p_token: dniConsulta });
+                        setPortalTurnoConsultado(refreshed);
+                        setMensajeExitoAutogestion('El turno se canceló correctamente.');
+                      } catch (cause: any) {
+                        setErrorConsulta(traducirErrorBase(cause?.message || 'turno_no_cancelable'));
+                      }
+                    }}>
+                    Cancelar turno
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Formulario de Búsqueda por DNI o Código */}
             <div className="space-y-4">

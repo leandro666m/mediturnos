@@ -376,7 +376,16 @@ export const syncEntireWorkspaceToDrive = async (params: {
             esquemaVersion: '2.0-PostgreSQL-Compatible',
             actualizadoEn: new Date().toISOString(),
           },
-          profesional: params.professional,
+          profesional: (() => {
+            // Eliminar campos heredados de quiet hours de respaldos/restauraciones antiguos.
+            const parametros: Professional['parametros'] & {
+              quietHoursInicio?: string;
+              quietHoursFin?: string;
+            } = { ...params.professional.parametros };
+            delete parametros.quietHoursInicio;
+            delete parametros.quietHoursFin;
+            return { ...params.professional, parametros };
+          })(),
           direcciones: params.locations,
         },
         configFolder.id

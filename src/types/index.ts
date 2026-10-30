@@ -84,8 +84,6 @@ export interface Professional {
     anticipacionMinHoras: number;
     horizonteDias: number;
     margenMin: number;
-    quietHoursInicio: string; // "22:00"
-    quietHoursFin: string;    // "08:00"
     plazoCancelacionHoras: number; // default 24. Aplica a CANCELAR y a REPROGRAMAR
   };
 }

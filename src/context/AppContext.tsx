@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   ActorCambio,
   Appointment,
@@ -46,6 +46,9 @@ import {
   recortarHora,
   traducirErrorBase,
 } from '../data/mappers';
+import { loadSupabaseWorkspace, saveSupabaseNotes, saveSupabaseWorkspace } from '../data/supabaseWorkspace';
+import { createDataId } from '../data/ids';
+import { supabase } from '../data/supabaseClient';
 import { formatearFechaCorta, formatearHora, formatearMoneda } from '../modules/format';
 import {
   initDriveAuth,
@@ -164,6 +167,8 @@ interface AppContextType {
   toggleHolidayLaborable: (holidayId: string) => void;
   updateHolidays: (holidays: Holiday[]) => void;
   resetToDemoData: () => void;
+  dataLoaded: boolean;
+  dataSyncError: string | null;
 
   // Funciones del Portal Público (Contrato Supabase RPC Sección 5)
   portalAgendaPublica: (params: {
@@ -229,7 +234,12 @@ const STORAGE_KEY = 'mediturnos_state_v6';
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessional?: Professional; publicWorkspace?: import('../data/supabaseWorkspace').SupabaseWorkspace }> = ({ children, initialProfessional, publicWorkspace }) => {
+  const [dataLoaded, setDataLoaded] = useState(!initialProfessional || Boolean(publicWorkspace));
+  const [dbHydrated, setDbHydrated] = useState(!initialProfessional || Boolean(publicWorkspace));
+  const [dataSyncError, setDataSyncError] = useState<string | null>(null);
+  const persistenceQueue = useRef<Promise<void>>(Promise.resolve());
+  const noteSignatures = useRef<Map<string, string>>(new Map());
   const [sessionToken] = useState(() => {
     try {
       if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -244,6 +254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Inicialización de estado con soporte para LocalStorage y migraciones
   const [professional, setProfessional] = useState<Professional>(() => {
+    if (initialProfessional) return initialProfessional;
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_prof`);
       if (saved) {
@@ -270,6 +281,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [professional.tamanoTexto, activeZone]);
 
   const [locations, setLocations] = useState<Location[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_locs`);
       return saved ? JSON.parse(saved) : INITIAL_LOCATIONS;
@@ -279,6 +291,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [services, setServices] = useState<Service[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_services`);
       return saved ? JSON.parse(saved) : INITIAL_SERVICES;
@@ -288,6 +301,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [workingHours, setWorkingHours] = useState<WorkingHours[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_hours`);
       const raw: WorkingHours[] = saved ? JSON.parse(saved) : INITIAL_WORKING_HOURS;
@@ -314,6 +328,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [holidays, setHolidays] = useState<Holiday[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_holidays`);
       return saved ? JSON.parse(saved) : INITIAL_HOLIDAYS;
@@ -323,6 +338,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [timeOffs, setTimeOffs] = useState<TimeOff[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_timeoffs`);
       return saved ? JSON.parse(saved) : [];
@@ -332,6 +348,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [coverages, setCoverages] = useState<Coverage[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_coverages`);
       let list: Coverage[] = saved ? JSON.parse(saved) : INITIAL_COVERAGES;
@@ -344,6 +361,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [patients, setPatients] = useState<Patient[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_patients`);
       const list: Patient[] = saved ? JSON.parse(saved) : INITIAL_PATIENTS;
@@ -361,6 +379,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_appointments`);
       const list: Appointment[] = saved ? JSON.parse(saved) : generarTurnosIniciales();
@@ -382,6 +401,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [holds, setHolds] = useState<AppointmentHold[]>([]);
 
   const [notes, setNotes] = useState<ConsultationNote[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_notes`);
       return saved ? JSON.parse(saved) : INITIAL_CONSULTATION_NOTES;
@@ -391,6 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [templates, setTemplates] = useState<MessageTemplate[]>(() => {
+    if (initialProfessional) return [];
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_templates`);
       const raw: MessageTemplate[] = saved ? JSON.parse(saved) : INITIAL_TEMPLATES;
@@ -406,6 +427,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_TEMPLATES;
     }
   });
+
+  // En modo autenticado, Supabase es la fuente de verdad. No se cargan datos demo
+  // ni el localStorage compartido entre profesionales.
+  useEffect(() => {
+    if (publicWorkspace) {
+      setLocations(publicWorkspace.locations);
+      setServices(publicWorkspace.services);
+      setWorkingHours(publicWorkspace.workingHours);
+      setHolidays(publicWorkspace.holidays);
+      setTimeOffs(publicWorkspace.timeOffs);
+      setCoverages(publicWorkspace.coverages);
+      setPatients(publicWorkspace.patients);
+      setAppointments(publicWorkspace.appointments);
+      setNotes(publicWorkspace.notes);
+      setTemplates(publicWorkspace.templates);
+      return;
+    }
+    if (!initialProfessional) return;
+    let active = true;
+    setDataLoaded(false);
+    setDbHydrated(false);
+    loadSupabaseWorkspace()
+      .then(workspace => {
+        if (!active) return;
+        setLocations(workspace.locations);
+        setServices(workspace.services);
+        setWorkingHours(workspace.workingHours);
+        setHolidays(workspace.holidays);
+        setTimeOffs(workspace.timeOffs);
+        setCoverages(workspace.coverages);
+        setPatients(workspace.patients);
+        setAppointments(workspace.appointments);
+        setNotes(workspace.notes);
+        noteSignatures.current = new Map(workspace.notes.map(note => [note.id, JSON.stringify(note)]));
+        setTemplates(workspace.templates);
+        setDataSyncError(null);
+        setDbHydrated(true);
+      })
+      .catch(error => {
+        if (active) setDataSyncError(error instanceof Error ? error.message : 'No se pudieron cargar los datos de Supabase.');
+      })
+      .finally(() => { if (active) setDataLoaded(true); });
+    return () => { active = false; };
+  }, [initialProfessional?.id, publicWorkspace]);
 
   // Estados para Google Drive y base de datos en la nube
   const [driveUser, setDriveUser] = useState<DriveUserInfo | null>(() => {
@@ -449,10 +514,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem(`${STORAGE_KEY}_drive_connected`, 'true');
       },
       () => {
-        if (!localStorage.getItem(`${STORAGE_KEY}_drive_connected`)) {
-          setIsDriveConnected(false);
-          setDriveUser(null);
-        }
+        // El token de Drive solo vive en memoria. Si Firebase restaura el usuario
+        // pero no hay token (por ejemplo, después de recargar), no hay sesión
+        // utilizable y no debemos mostrar la conexión persistida como activa.
+        setIsDriveConnected(false);
+        setDriveUser(null);
+        localStorage.removeItem(`${STORAGE_KEY}_drive_connected`);
+        localStorage.removeItem(`${STORAGE_KEY}_drive_user`);
       }
     );
     return () => unsubscribe();
@@ -460,6 +528,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Guardar cambios en LocalStorage para persistencia
   useEffect(() => {
+    if (initialProfessional || publicWorkspace) return;
     try {
       localStorage.setItem(`${STORAGE_KEY}_prof`, JSON.stringify(professional));
       localStorage.setItem(`${STORAGE_KEY}_locs`, JSON.stringify(locations));
@@ -476,6 +545,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Ignorar quota errors
     }
   }, [professional, locations, services, workingHours, holidays, timeOffs, coverages, patients, appointments, notes, templates]);
+
+  // Persistir los cambios del dashboard en Supabase, en orden de dependencias FK.
+  // Los datos clínicos y los turnos nunca se eliminan desde este sincronizador.
+  useEffect(() => {
+    if (!initialProfessional || publicWorkspace || !dataLoaded || !dbHydrated) return;
+    const snapshot = { professional, locations, services, workingHours, holidays, timeOffs, coverages, patients, appointments, notes, templates };
+    persistenceQueue.current = persistenceQueue.current
+      .catch(() => undefined)
+      .then(() => saveSupabaseWorkspace(snapshot))
+      .then(() => setDataSyncError(null))
+      .catch(error => setDataSyncError(error instanceof Error ? error.message : 'No se pudieron guardar los cambios en Supabase.'));
+  }, [initialProfessional?.id, dataLoaded, dbHydrated, locations, services, workingHours, holidays, timeOffs, coverages, patients, appointments, templates]);
+
+  useEffect(() => {
+    if (!initialProfessional || publicWorkspace || !dbHydrated) return;
+    const changedNotes = notes.filter(note => noteSignatures.current.get(note.id) !== JSON.stringify(note));
+    if (!changedNotes.length) return;
+    persistenceQueue.current = persistenceQueue.current
+      .catch(() => undefined)
+      .then(() => saveSupabaseNotes(changedNotes, initialProfessional.id))
+      .then(() => {
+        changedNotes.forEach(note => noteSignatures.current.set(note.id, JSON.stringify(note)));
+        setDataSyncError(null);
+      })
+      .catch(error => setDataSyncError(error instanceof Error ? error.message : 'No se pudieron guardar las notas clínicas.'));
+  }, [initialProfessional?.id, dbHydrated, notes]);
 
   // Limpieza periódica de Holds vencidos
   useEffect(() => {
@@ -574,7 +669,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const nuevoPaciente: Patient = {
-      id: 'pat_' + Math.random().toString(36).slice(2, 10),
+      id: createDataId('pat_'),
       professionalId: professional.id,
       dni: cleanDni,
       nombre: data.nombre.trim(),
@@ -696,7 +791,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!pacienteExistente) {
       // Dar de alta paciente
       const nuevoPaciente: Patient = {
-        id: 'pat_' + Math.random().toString(36).slice(2, 10),
+        id: createDataId('pat_'),
         professionalId: professional.id,
         dni: cleanDni,
         nombre: params.pacienteNombre.trim(),
@@ -721,7 +816,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const manageToken = 'mng_' + Math.random().toString(36).slice(2, 12);
 
     const nuevoTurno: Appointment = {
-      id: 'app_' + Math.random().toString(36).slice(2, 10),
+      id: createDataId('app_'),
       professionalId: professional.id,
       patientId: patientId || 'pat_anon',
       serviceId: params.serviceId,
@@ -807,7 +902,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'Turno no encontrado.' };
     }
 
-    const nuevoId = 'app_' + Math.random().toString(36).slice(2, 10);
+    const nuevoId = createDataId('app_');
 
     const nuevoTurno: Appointment = {
       ...turnoOriginal,
@@ -859,7 +954,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return copy;
       } else {
         savedNote = {
-          id: targetId || ('note_' + Math.random().toString(36).slice(2, 10)),
+          id: targetId || createDataId('note_'),
           professionalId: professional.id,
           patientId: noteData.patientId,
           appointmentId: noteData.appointmentId,
@@ -884,7 +979,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateProfessional = (data: Partial<Professional>) => {
-    setProfessional(prev => ({ ...prev, ...data }));
+    const updated = { ...professional, ...data };
+    setProfessional(updated);
+    if (initialProfessional && supabase) {
+      void supabase.from('profesionales').update({
+        slug: updated.slug,
+        nombre: updated.nombre,
+        titulo: updated.titulo,
+        especialidad: updated.especialidad,
+        matricula_nacional: updated.matriculaNacional || null,
+        matricula_provincial: updated.matriculaProvincial || null,
+        telefono_contacto: updated.telefonoContactoPrivado || null,
+        cbu_cvu: updated.cbu || null,
+        alias_mp: updated.aliasCobro || null,
+        titular_cuenta: updated.titularCobro || null,
+        cuit: updated.cuit || null,
+        banco: updated.banco || null,
+        foto_perfil_path: updated.fotoPerfil || null,
+        tamano_texto: updated.tamanoTexto || 'predeterminado',
+        zona_horaria: updated.zonaHoraria,
+        agenda_pausada: updated.agendaPausada,
+        intervalo_turnos_min: updated.parametros.grillaMin,
+        anticipacion_minima_hs: updated.parametros.anticipacionMinHoras,
+        horizonte_maximo_dias: updated.parametros.horizonteDias,
+        margen_entre_turnos_min: updated.parametros.margenMin,
+        plazo_cancelacion_hs: updated.parametros.plazoCancelacionHoras,
+      }).eq('id', updated.id).then(({ error }) => {
+        if (error) setDataSyncError(`Perfil profesional: ${error.message}`);
+      });
+    }
   };
 
   const setTamanoTexto = (size: FontSizePreference) => {
@@ -904,7 +1027,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleAgendaPausa = () => {
-    setProfessional(prev => ({ ...prev, agendaPausada: !prev.agendaPausada }));
+    updateProfessional({ agendaPausada: !professional.agendaPausada });
   };
 
   const exportarCsvTurnos = (turnosAExportar: Appointment[]) => {
@@ -1263,7 +1386,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const nuevoId = 'app_' + Math.random().toString(36).slice(2, 10);
+    const nuevoId = createDataId('app_');
     const nuevoTurno: Appointment = {
       ...turnoOriginal,
       id: nuevoId,
@@ -1302,6 +1425,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     p_hasta: string;
     p_session_id?: string;
   }): Promise<PortalAgendaPublicaResult> => {
+    if (initialProfessional && supabase) {
+      const { data, error } = await supabase.rpc('portal_agenda_publica', params);
+      if (error) throw new Error(error.message);
+      return data as PortalAgendaPublicaResult;
+    }
     const { p_ref, p_desde, p_hasta, p_session_id } = params;
     const match = professional.slug === p_ref || professional.publicId === p_ref;
     if (!match) throw new Error('profesional_no_encontrado');
@@ -1421,6 +1549,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     p_session_id: string;
     p_ip?: string;
   }): Promise<PortalHoldResult> => {
+    if (initialProfessional && supabase) {
+      const { data, error } = await supabase.rpc('portal_crear_hold', params);
+      if (error) throw new Error(error.message);
+      return data as PortalHoldResult;
+    }
     const { p_ref, p_servicio_id, p_inicio, p_modalidad, p_sede_id, p_session_id } = params;
     if (!p_session_id || p_session_id.trim().length < 8 || p_session_id.length > 128) {
       throw new Error('sesion_invalida');
@@ -1515,6 +1648,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     p_motivo?: string;
     p_ip?: string;
   }): Promise<PortalConfirmarTurnoResult> => {
+    if (initialProfessional && supabase) {
+      const { data, error } = await supabase.rpc('portal_confirmar_turno', params);
+      if (error) throw new Error(error.message);
+      return data as PortalConfirmarTurnoResult;
+    }
     const {
       p_ref,
       p_hold_id,
@@ -1549,7 +1687,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let paciente = patients.find(p => p.dni === cleanDni);
     if (!paciente) {
       const nuevoPaciente: Patient = {
-        id: 'pat_' + Math.random().toString(36).slice(2, 10),
+        id: createDataId('pat_'),
         professionalId: professional.id,
         dni: cleanDni,
         nombre: p_nombre.trim(),
@@ -1568,7 +1706,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const coberturaNombre = cov ? cov.nombre : 'Particular';
 
     const manageToken = 'mng_' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
-    const turnoId = 'app_' + Math.random().toString(36).slice(2, 10);
+    const turnoId = createDataId('app_');
 
     const nuevoTurno: Appointment = {
       id: turnoId,
@@ -1623,6 +1761,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const portalVerTurno = async (params: { p_token: string }): Promise<PortalVerTurnoResult> => {
+    if (initialProfessional && supabase) {
+      const { data, error } = await supabase.rpc('portal_ver_turno', params);
+      if (error) throw new Error(error.message);
+      return data as PortalVerTurnoResult;
+    }
     const { p_token } = params;
     const turno = appointments.find(a => a.manageToken === p_token || a.id === p_token);
     if (!turno) throw new Error('turno_no_encontrado');
@@ -1664,6 +1807,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     p_motivo?: string;
     p_ip?: string;
   }): Promise<PortalCancelarTurnoResult> => {
+    if (initialProfessional && supabase) {
+      const { data, error } = await supabase.rpc('portal_cancelar_turno', params);
+      if (error) throw new Error(error.message);
+      return data as PortalCancelarTurnoResult;
+    }
     const { p_token, p_motivo } = params;
     const turno = appointments.find(a => a.manageToken === p_token || a.id === p_token);
     if (!turno) throw new Error('turno_no_encontrado');
@@ -1697,6 +1845,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     p_session_id: string;
     p_ip?: string;
   }): Promise<PortalReprogramarTurnoResult> => {
+    if (initialProfessional && supabase) {
+      const { data, error } = await supabase.rpc('portal_reprogramar_turno', params);
+      if (error) throw new Error(error.message);
+      return data as PortalReprogramarTurnoResult;
+    }
     const { p_token, p_hold_id, p_session_id } = params;
     const oldTurno = appointments.find(a => a.manageToken === p_token || a.id === p_token);
     if (!oldTurno) throw new Error('turno_no_encontrado');
@@ -1767,7 +1920,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addCoverage = (nombre: string): Coverage => {
     const trimmed = nombre.trim();
-    const id = 'cov_' + Math.random().toString(36).slice(2, 9);
+    const id = createDataId('cov_');
     const nueva: Coverage = {
       id,
       nombre: trimmed,
@@ -1775,10 +1928,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setCoverages(prev => {
       const actualizadas = [...prev, nueva];
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_coverages`, JSON.stringify(actualizadas));
-      } catch (e) {
-        console.error(e);
+      if (!initialProfessional) {
+        try { localStorage.setItem(`${STORAGE_KEY}_coverages`, JSON.stringify(actualizadas)); } catch (e) { console.error(e); }
       }
       return actualizadas;
     });
@@ -1794,10 +1945,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const actualizados = prev.map(h =>
         h.id === holidayId ? { ...h, laborable: !h.laborable } : h
       );
-      try {
-        localStorage.setItem(`${STORAGE_KEY}_holidays`, JSON.stringify(actualizados));
-      } catch (e) {
-        console.error(e);
+      if (!initialProfessional) {
+        try { localStorage.setItem(`${STORAGE_KEY}_holidays`, JSON.stringify(actualizados)); } catch (e) { console.error(e); }
       }
       return actualizados;
     });
@@ -1808,6 +1957,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetToDemoData = () => {
+    if (initialProfessional) {
+      setDataSyncError('El reinicio a datos demo está deshabilitado mientras usas Supabase.');
+      return;
+    }
     localStorage.removeItem(`${STORAGE_KEY}_prof`);
     localStorage.removeItem(`${STORAGE_KEY}_locs`);
     localStorage.removeItem(`${STORAGE_KEY}_services`);
@@ -1911,6 +2064,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     filesCount?: number;
   }> => {
     if (!getDriveAccessToken()) {
+      setIsDriveConnected(false);
+      setDriveUser(null);
+      localStorage.removeItem(`${STORAGE_KEY}_drive_connected`);
+      localStorage.removeItem(`${STORAGE_KEY}_drive_user`);
       return { success: false, error: 'Se requiere iniciar sesión en Google Drive primero.' };
     }
     setDriveSyncStatus('syncing');
@@ -2055,6 +2212,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleHolidayLaborable,
         updateHolidays,
         resetToDemoData,
+        dataLoaded,
+        dataSyncError,
         // Funciones del Portal Público
         portalAgendaPublica,
         portalCrearHold,

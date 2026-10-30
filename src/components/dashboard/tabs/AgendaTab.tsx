@@ -27,7 +27,6 @@ import {
 } from '../../../modules/format';
 import {
   construirEnlaceWhatsApp,
-  estaEnHorarioDescanso,
   prepararVariablesDesdeTurno,
   resolverPlantillaMensaje,
 } from '../../../modules/messaging';
@@ -187,14 +186,6 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
       tpl?.bloqueVideollamada || '',
       variables
     );
-
-    // Advertencia de horario de descanso si aplica (22:00 a 08:00 - Regla 2.15)
-    if (estaEnHorarioDescanso(professional.parametros.quietHoursInicio, professional.parametros.quietHoursFin)) {
-      const continuar = window.confirm(
-        'Aviso: Actualmente es horario de descanso (22:00 a 08:00 hs). ¿Deseas abrir WhatsApp de todos modos?'
-      );
-      if (!continuar) return;
-    }
 
     const { url, valido } = construirEnlaceWhatsApp(turno.pacienteTelefono, textoMensaje);
     if (!valido || !url) {

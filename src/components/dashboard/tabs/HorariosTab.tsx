@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Clock,
   Calendar,
@@ -17,11 +17,23 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
+  RefreshCw,
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Holiday, Modalidad, ModalidadFranja, Service, WorkingHours } from '../../../types';
 import { formatearFechaLarga, formatearMoneda } from '../../../modules/format';
-import { construirEnlaceWhatsApp, resolverPlantillaMensaje } from '../../../modules/messaging';
+import {
+  BLOQUE_PRESENCIAL_DEFAULT,
+  BLOQUE_VIDEOLLAMADA_DEFAULT,
+  construirEnlaceWhatsApp,
+  CUERPO_CANCELACION_DEFAULT,
+  CUERPO_CONFIRMACION_DEFAULT,
+  CUERPO_RECORDATORIO_DEFAULT,
+  CUERPO_REPROGRAMACION_DEFAULT,
+  resolverPlantillaMensaje,
+} from '../../../modules/messaging';
+import { createDataId } from '../../../data/ids';
+import { isSupabaseConfigured } from '../../../data/supabaseClient';
 
 export const HorariosTab: React.FC = () => {
   const {
@@ -46,54 +58,65 @@ export const HorariosTab: React.FC = () => {
   const [anticipacionHoras, setAnticipacionHoras] = useState(professional.parametros.anticipacionMinHoras);
   const [horizonteDias, setHorizonteDias] = useState(professional.parametros.horizonteDias);
   const [margenMin, setMargenMin] = useState(professional.parametros.margenMin);
-  const [quietInicio, setQuietInicio] = useState(professional.parametros.quietHoursInicio);
-  const [quietFin, setQuietFin] = useState(professional.parametros.quietHoursFin);
   const [plazoCancelacionHoras, setPlazoCancelacionHoras] = useState(
     professional.parametros.plazoCancelacionHoras ?? 24
   );
 
   // Servicios
-  const [modalServicio, setModalServicio] = useState<Partial<Service> | null>(null);
+  const [modalServicio, setModalServicio] = useState<(Partial<Service> & { duracionMin?: number | ''; precioCentavos?: number | '' }) | null>(null);
 
   // WhatsApp Templates
   const [tplConfirmacion, setTplConfirmacion] = useState(() => {
-    return templates.find(t => t.tipo === 'confirmacion')?.cuerpo || '';
+    return templates.find(t => t.tipo === 'confirmacion')?.cuerpo || CUERPO_CONFIRMACION_DEFAULT;
   });
   const [tplRecordatorio, setTplRecordatorio] = useState(() => {
-    return templates.find(t => t.tipo === 'recordatorio')?.cuerpo || '';
+    return templates.find(t => t.tipo === 'recordatorio')?.cuerpo || CUERPO_RECORDATORIO_DEFAULT;
   });
   const [tplReprogramacion, setTplReprogramacion] = useState(() => {
-    return (
-      templates.find(t => t.tipo === 'reprogramacion')?.cuerpo ||
-      'Hola {paciente}, tu turno con {profesional} fue reprogramado para el {fecha} a las {hora}. {bloque_modalidad}'
-    );
+    return templates.find(t => t.tipo === 'reprogramacion')?.cuerpo || CUERPO_REPROGRAMACION_DEFAULT;
   });
   const [tplCancelacion, setTplCancelacion] = useState(() => {
-    return (
-      templates.find(t => t.tipo === 'cancelacion')?.cuerpo ||
-      'Hola {paciente}, confirmamos que tu turno con {profesional} del {fecha} a las {hora} fue cancelado.'
-    );
+    return templates.find(t => t.tipo === 'cancelacion')?.cuerpo || CUERPO_CANCELACION_DEFAULT;
   });
   const [bloquePresencial, setBloquePresencial] = useState(() => {
-    return templates.find(t => t.tipo === 'confirmacion')?.bloquePresencial || '';
+    return templates.find(t => t.tipo === 'confirmacion')?.bloquePresencial || BLOQUE_PRESENCIAL_DEFAULT;
   });
   const [bloqueVideollamada, setBloqueVideollamada] = useState(() => {
-    return templates.find(t => t.tipo === 'confirmacion')?.bloqueVideollamada || '';
+    return templates.find(t => t.tipo === 'confirmacion')?.bloqueVideollamada || BLOQUE_VIDEOLLAMADA_DEFAULT;
   });
   const [bloquePresencialRec, setBloquePresencialRec] = useState(() => {
     return (
       templates.find(t => t.tipo === 'recordatorio')?.bloquePresencial ||
       templates.find(t => t.tipo === 'confirmacion')?.bloquePresencial ||
-      ''
+      BLOQUE_PRESENCIAL_DEFAULT
     );
   });
   const [bloqueVideollamadaRec, setBloqueVideollamadaRec] = useState(() => {
     return (
       templates.find(t => t.tipo === 'recordatorio')?.bloqueVideollamada ||
       templates.find(t => t.tipo === 'confirmacion')?.bloqueVideollamada ||
-      ''
+      BLOQUE_VIDEOLLAMADA_DEFAULT
     );
   });
+
+  // Las plantillas autenticadas llegan después del primer render, cuando termina la hidratación.
+  // Actualizar el formulario en ese momento evita que los campos queden vacíos.
+  useEffect(() => {
+    const confirmacion = templates.find(t => t.tipo === 'confirmacion');
+    const recordatorio = templates.find(t => t.tipo === 'recordatorio');
+    const reprogramacion = templates.find(t => t.tipo === 'reprogramacion');
+    const cancelacion = templates.find(t => t.tipo === 'cancelacion');
+    setTplConfirmacion(confirmacion?.cuerpo || CUERPO_CONFIRMACION_DEFAULT);
+    setTplRecordatorio(recordatorio?.cuerpo || CUERPO_RECORDATORIO_DEFAULT);
+    setTplReprogramacion(reprogramacion?.cuerpo || CUERPO_REPROGRAMACION_DEFAULT);
+    setTplCancelacion(cancelacion?.cuerpo || CUERPO_CANCELACION_DEFAULT);
+    const presencial = confirmacion?.bloquePresencial || BLOQUE_PRESENCIAL_DEFAULT;
+    const videollamada = confirmacion?.bloqueVideollamada || BLOQUE_VIDEOLLAMADA_DEFAULT;
+    setBloquePresencial(presencial);
+    setBloqueVideollamada(videollamada);
+    setBloquePresencialRec(recordatorio?.bloquePresencial || presencial);
+    setBloqueVideollamadaRec(recordatorio?.bloqueVideollamada || videollamada);
+  }, [templates]);
 
   // Feriados Nacionales y Asuetos
   const [filtroFeriado, setFiltroFeriado] = useState<'todos' | 'laborables' | 'no_laborables'>('todos');
@@ -102,6 +125,53 @@ export const HorariosTab: React.FC = () => {
   const [nuevoFeriadoNombre, setNuevoFeriadoNombre] = useState('');
   const [nuevoFeriadoLaborable, setNuevoFeriadoLaborable] = useState(false);
   const [errorNuevoFeriado, setErrorNuevoFeriado] = useState('');
+  const [sincronizandoFeriados, setSincronizandoFeriados] = useState(false);
+  const [estadoSincronizacionFeriados, setEstadoSincronizacionFeriados] = useState('');
+
+  const sincronizarFeriadosNacionales = async () => {
+    setSincronizandoFeriados(true);
+    setEstadoSincronizacionFeriados('');
+
+    try {
+      const anioActual = new Date().getFullYear();
+      const anios = [anioActual, anioActual + 1];
+      const respuestas = await Promise.all(anios.map(async anio => {
+        const response = await fetch(`https://api.argentinadatos.com/v1/feriados/${anio}`);
+        if (!response.ok) throw new Error(`No se pudieron consultar los feriados de ${anio}.`);
+        return response.json() as Promise<Array<{ fecha: string; nombre: string }>>;
+      }));
+
+      const existentesPorFecha = new Map(holidays.map(feriado => [feriado.fecha, feriado]));
+      const esUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const nacionales = respuestas.flat().filter(feriado =>
+        /^\d{4}-\d{2}-\d{2}$/.test(feriado.fecha) && typeof feriado.nombre === 'string' && feriado.nombre.trim()
+      );
+      const fechasNacionales = new Set(nacionales.map(feriado => feriado.fecha));
+      const sincronizados: Holiday[] = nacionales.map(feriado => {
+        const existente = existentesPorFecha.get(feriado.fecha);
+        return {
+          id: existente && (!isSupabaseConfigured || esUuid(existente.id))
+            ? existente.id
+            : createDataId('hol_nacional_'),
+          fecha: feriado.fecha,
+          nombre: feriado.nombre.trim(),
+          laborable: existente?.laborable ?? false,
+        };
+      });
+      const personalizados = holidays
+        .filter(feriado => !fechasNacionales.has(feriado.fecha))
+        .map(feriado => isSupabaseConfigured && !esUuid(feriado.id)
+          ? { ...feriado, id: createDataId('hol_custom_') }
+          : feriado);
+
+      updateHolidays([...sincronizados, ...personalizados]);
+      setEstadoSincronizacionFeriados(`Se actualizaron ${sincronizados.length} feriados nacionales (${anioActual} y ${anioActual + 1}).`);
+    } catch (error) {
+      setEstadoSincronizacionFeriados(error instanceof Error ? error.message : 'No se pudieron actualizar los feriados. Intentá nuevamente.');
+    } finally {
+      setSincronizandoFeriados(false);
+    }
+  };
 
   const handleCrearFeriadoPersonalizado = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +180,7 @@ export const HorariosTab: React.FC = () => {
       return;
     }
     const nuevo: Holiday = {
-      id: 'hol_custom_' + Math.random().toString(36).slice(2, 8),
+      id: createDataId('hol_custom_'),
       fecha: nuevoFeriadoFecha,
       nombre: nuevoFeriadoNombre.trim(),
       laborable: nuevoFeriadoLaborable,
@@ -244,7 +314,7 @@ export const HorariosTab: React.FC = () => {
       // Crear nueva franja para el día
       const defaultLocId = locations.find(l => l.activa)?.id || locations[0]?.id;
       const nueva: WorkingHours = {
-        id: 'wh_' + Math.random().toString(36).slice(2, 8),
+        id: createDataId('wh_'),
         diaSemana: diaNum,
         horaInicio: '09:00',
         horaFin: '18:00',
@@ -300,7 +370,7 @@ export const HorariosTab: React.FC = () => {
     const defaultLocId = franjaAnterior?.locationId || locations.find(l => l.activa)?.id || locations[0]?.id;
 
     const nueva: WorkingHours = {
-      id: 'wh_' + Math.random().toString(36).slice(2, 8),
+      id: createDataId('wh_'),
       diaSemana: diaNum,
       horaInicio: inicio,
       horaFin: fin,
@@ -374,8 +444,6 @@ export const HorariosTab: React.FC = () => {
         anticipacionMinHoras: anticipacionHoras,
         horizonteDias,
         margenMin,
-        quietHoursInicio: quietInicio,
-        quietHoursFin: quietFin,
         plazoCancelacionHoras,
       },
     });
@@ -417,7 +485,7 @@ export const HorariosTab: React.FC = () => {
 
     if (!actualizadas.some(t => t.tipo === 'reprogramacion')) {
       actualizadas.push({
-        id: 'tpl_reprog',
+        id: createDataId('tpl_reprog'),
         professionalId: professional.id,
         tipo: 'reprogramacion',
         cuerpo: tplReprogramacion,
@@ -427,7 +495,7 @@ export const HorariosTab: React.FC = () => {
     }
     if (!actualizadas.some(t => t.tipo === 'cancelacion')) {
       actualizadas.push({
-        id: 'tpl_cancel',
+        id: createDataId('tpl_cancel'),
         professionalId: professional.id,
         tipo: 'cancelacion',
         cuerpo: tplCancelacion,
@@ -804,7 +872,7 @@ export const HorariosTab: React.FC = () => {
               <button
                 onClick={() =>
                   setModalServicio({
-                    id: 'srv_' + Math.random().toString(36).slice(2, 8),
+                    id: createDataId('srv_'),
                     nombre: '',
                     descripcion: '',
                     duracionMin: 30,
@@ -1446,30 +1514,6 @@ export const HorariosTab: React.FC = () => {
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Horario de descanso WhatsApp (Inicio)
-              </label>
-              <input
-                type="time"
-                value={quietInicio}
-                onChange={e => setQuietInicio(e.target.value)}
-                className="w-full text-xs p-2 rounded-lg border border-slate-200"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Horario de descanso WhatsApp (Fin)
-              </label>
-              <input
-                type="time"
-                value={quietFin}
-                onChange={e => setQuietFin(e.target.value)}
-                className="w-full text-xs p-2 rounded-lg border border-slate-200"
-              />
-            </div>
-
             <div className="sm:col-span-2 pt-2 border-t border-slate-100">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Plazo límite para cancelar o reprogramar turnos (Horas previas)
@@ -1527,21 +1571,42 @@ export const HorariosTab: React.FC = () => {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setNuevoFeriadoFecha('');
-                setNuevoFeriadoNombre('');
-                setNuevoFeriadoLaborable(false);
-                setErrorNuevoFeriado('');
-                setModalNuevoFeriado(true);
-              }}
-              className="self-start sm:self-auto px-3 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Agregar Feriado / Asueto</span>
-            </button>
+            <div className="flex flex-wrap gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={sincronizarFeriadosNacionales}
+                disabled={sincronizandoFeriados}
+                className="px-3 py-1.5 bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait shrink-0"
+                title="Consulta los feriados nacionales del año actual y el siguiente"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${sincronizandoFeriados ? 'animate-spin' : ''}`} />
+                <span>{sincronizandoFeriados ? 'Consultando…' : 'Actualizar feriados'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNuevoFeriadoFecha('');
+                  setNuevoFeriadoNombre('');
+                  setNuevoFeriadoLaborable(false);
+                  setErrorNuevoFeriado('');
+                  setModalNuevoFeriado(true);
+                }}
+                className="px-3 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar Feriado / Asueto</span>
+              </button>
+            </div>
           </div>
+
+          {estadoSincronizacionFeriados && (
+            <p role="status" className={`text-xs ${estadoSincronizacionFeriados.startsWith('Se actualizaron') ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {estadoSincronizacionFeriados}
+            </p>
+          )}
+          <p className="text-[11px] text-slate-500 -mt-3">
+            Datos consultados en <a href="https://api.argentinadatos.com/v1/feriados/" target="_blank" rel="noreferrer" className="underline hover:text-sky-700">ArgentinaDatos</a>.
+          </p>
 
           {/* Tarjetas resumen */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -1813,8 +1878,8 @@ export const HorariosTab: React.FC = () => {
                   <label className="block font-semibold text-slate-700 mb-1">Duración (minutos)</label>
                   <input
                     type="number"
-                    value={modalServicio.duracionMin || 30}
-                    onChange={e => setModalServicio({ ...modalServicio, duracionMin: Number(e.target.value) })}
+                    value={modalServicio.duracionMin ?? 30}
+                    onChange={e => setModalServicio({ ...modalServicio, duracionMin: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full p-2 border border-slate-200 rounded-lg outline-none"
                   />
                 </div>
@@ -1823,8 +1888,8 @@ export const HorariosTab: React.FC = () => {
                   <label className="block font-semibold text-slate-700 mb-1">Valor en Pesos</label>
                   <input
                     type="number"
-                    value={modalServicio.precioCentavos ? modalServicio.precioCentavos / 100 : 20000}
-                    onChange={e => setModalServicio({ ...modalServicio, precioCentavos: Number(e.target.value) * 100 })}
+                    value={modalServicio.precioCentavos === '' ? '' : (modalServicio.precioCentavos ?? 2000000) / 100}
+                    onChange={e => setModalServicio({ ...modalServicio, precioCentavos: e.target.value === '' ? '' : Number(e.target.value) * 100 })}
                     className="w-full p-2 border border-slate-200 rounded-lg outline-none"
                   />
                 </div>
@@ -1854,14 +1919,28 @@ export const HorariosTab: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  if (modalServicio.nombre) {
+                  if (
+                    modalServicio.nombre?.trim() &&
+                    modalServicio.duracionMin !== '' &&
+                    Number.isFinite(modalServicio.duracionMin) &&
+                    modalServicio.duracionMin! > 0 &&
+                    modalServicio.precioCentavos !== '' &&
+                    Number.isFinite(modalServicio.precioCentavos) &&
+                    modalServicio.precioCentavos! >= 0
+                  ) {
+                    const servicioGuardado: Service = {
+                      ...modalServicio,
+                      nombre: modalServicio.nombre.trim(),
+                      duracionMin: modalServicio.duracionMin!,
+                      precioCentavos: modalServicio.precioCentavos!,
+                    } as Service;
                     const idx = services.findIndex(s => s.id === modalServicio.id);
                     if (idx >= 0) {
                       const copy = [...services];
-                      copy[idx] = modalServicio as Service;
+                      copy[idx] = servicioGuardado;
                       updateServices(copy);
                     } else {
-                      updateServices([...services, modalServicio as Service]);
+                      updateServices([...services, servicioGuardado]);
                     }
                     setModalServicio(null);
                   }

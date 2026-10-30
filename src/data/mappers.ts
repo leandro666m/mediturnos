@@ -70,8 +70,6 @@ export interface DbProfesional {
   horizonte_maximo_dias: number;
   margen_entre_turnos_min: number;
   plazo_cancelacion_hs: number;
-  horario_silencio_inicio: string; // "HH:MM:SS" o "HH:MM"
-  horario_silencio_fin: string;    // "HH:MM:SS" o "HH:MM"
   created_at?: string;
   updated_at?: string;
 }
@@ -371,8 +369,6 @@ export function professionalToDb(p: Professional, email = ''): DbProfesional {
     horizonte_maximo_dias: p.parametros.horizonteDias || 30,
     margen_entre_turnos_min: p.parametros.margenMin || 0,
     plazo_cancelacion_hs: p.parametros.plazoCancelacionHoras ?? 24,
-    horario_silencio_inicio: formatearHoraBase(p.parametros.quietHoursInicio || '22:00'),
-    horario_silencio_fin: formatearHoraBase(p.parametros.quietHoursFin || '08:00'),
   };
 }
 
@@ -401,8 +397,6 @@ export function professionalFromDb(d: DbProfesional): Professional {
       anticipacionMinHoras: d.anticipacion_minima_hs ?? 2,
       horizonteDias: d.horizonte_maximo_dias || 30,
       margenMin: d.margen_entre_turnos_min || 0,
-      quietHoursInicio: recortarHora(d.horario_silencio_inicio) || '22:00',
-      quietHoursFin: recortarHora(d.horario_silencio_fin) || '08:00',
       plazoCancelacionHoras: d.plazo_cancelacion_hs ?? 24,
     },
   };

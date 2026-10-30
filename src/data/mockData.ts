@@ -105,8 +105,6 @@ export const INITIAL_PROFESSIONAL: Professional = {
     anticipacionMinHoras: 2,
     horizonteDias: 45,
     margenMin: 0,
-    quietHoursInicio: '22:00',
-    quietHoursFin: '08:00',
     plazoCancelacionHoras: 12, // 12 horas antes
   },
 };
