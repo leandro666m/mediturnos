@@ -60,6 +60,8 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
   const [telefono, setTelefono] = useState(professional.telefonoContactoPrivado || '');
   const [alias, setAlias] = useState(professional.aliasCobro);
   const [titular, setTitular] = useState(professional.titularCobro);
+  const [banco, setBanco] = useState(professional.banco || '');
+  const [cuit, setCuit] = useState(professional.cuit || '');
   const [slug, setSlug] = useState(professional.slug);
   const [fotoPerfil, setFotoPerfil] = useState<string>(professional.fotoPerfil || '');
   const [tamanoTexto, setTamanoTextoState] = useState<FontSizePreference>(professional.tamanoTexto || 'predeterminado');
@@ -68,6 +70,13 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
   useEffect(() => {
     setTelefono(professional.telefonoContactoPrivado || '');
   }, [professional.telefonoContactoPrivado]);
+
+  useEffect(() => {
+    setAlias(professional.aliasCobro || '');
+    setTitular(professional.titularCobro || '');
+    setBanco(professional.banco || '');
+    setCuit(professional.cuit || '');
+  }, [professional.aliasCobro, professional.titularCobro, professional.banco, professional.cuit]);
 
   // Estados para el ABM de direcciones (Ubicaciones)
   const [listaLocations, setListaLocations] = useState<Location[]>(locations);
@@ -246,6 +255,8 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
       telefonoContactoPrivado: telAGuardar,
       aliasCobro: alias,
       titularCobro: titular,
+      banco,
+      cuit,
       slug: slug.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-'),
       fotoPerfil: fotoPerfil || undefined,
       tamanoTexto,
@@ -777,6 +788,26 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                   value={titular}
                   onChange={e => setTitular(e.target.value)}
                   placeholder="Nombre y Apellido"
+                  className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Banco</label>
+                <input
+                  type="text"
+                  value={banco}
+                  onChange={e => setBanco(e.target.value)}
+                  placeholder="Nombre del banco o billetera virtual"
+                  className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">CUIT</label>
+                <input
+                  type="text"
+                  value={cuit}
+                  onChange={e => setCuit(e.target.value)}
+                  placeholder="20-12345678-9"
                   className="w-full p-2.5 border border-slate-200 rounded-lg outline-none focus:border-sky-600"
                 />
               </div>

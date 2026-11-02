@@ -99,7 +99,14 @@ export function SupabasePublicPortalGate({ children }: {
           patients: [], notes: [], timeOffs: [], templates: [] },
       });
     };
-    load().catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
+    load().catch(cause => {
+      if (active) {
+        const message = (cause && typeof cause === 'object' && 'message' in cause)
+          ? String(cause.message)
+          : (typeof cause === 'object' ? JSON.stringify(cause) : String(cause));
+        setError(message);
+      }
+    });
     return () => { active = false; };
   }, []);
 

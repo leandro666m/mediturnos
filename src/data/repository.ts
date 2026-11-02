@@ -122,6 +122,8 @@ export interface PortalConfirmarTurnoResult {
   datos_cobro?: {
     alias?: string;
     titular?: string;
+    banco?: string | null;
+    cuit?: string | null;
   } | null;
 }
 
@@ -145,6 +147,21 @@ export interface PortalVerTurnoResult {
   puede_cancelar: boolean;
   puede_reprogramar: boolean;
   reprogramado_a?: string | null;
+}
+
+export interface PortalBuscarTurnosDniResult {
+  turnos: Array<{
+    id: string;
+    paciente_nombre: string;
+    servicio_id: string;
+    sede_id?: string | null;
+    inicio: string;
+    fin: string;
+    estado: EstadoTurno;
+    estado_pago: EstadoPago;
+    precio_centavos: number;
+    modalidad: Modalidad;
+  }>;
 }
 
 export interface PortalCancelarTurnoResult {

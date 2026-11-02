@@ -67,7 +67,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
   const [nroAfiliado, setNroAfiliado] = useState('');
   const [motivo, setMotivo] = useState('');
 
-  // Bloque 4: Cobro de Arancel Completo (Hito 2)
+  // Bloque 4: Cobro de Arancel
   const [marcarPagadoCompleto, setMarcarPagadoCompleto] = useState(false);
 
   // Modal para Agregar Obra Social / Prepaga
@@ -651,12 +651,12 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
           </div>
         </div>
 
-        {/* BLOQUE 4: COBRO DEL ARANCEL COMPLETO (HITO 2) */}
+        {/* BLOQUE 4: COBRO DEL ARANCEL*/}
         <div className="p-4 bg-emerald-50/60 border border-emerald-200/90 rounded-2xl space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-emerald-600" />
-              <span>4. Cobro del Arancel Completo (100%)</span>
+              <span>4. Cobro del Arancel</span>
             </h3>
             <span className="text-xs font-black text-emerald-800 tabular-nums bg-emerald-100 px-2.5 py-0.5 rounded-full">
               {formatearMoneda(servicioSeleccionado ? servicioSeleccionado.precioCentavos : 0)}
@@ -671,7 +671,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                 onChange={e => setMarcarPagadoCompleto(e.target.checked)}
                 className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               />
-              <span>Marcar consulta como abonada en el acto (Arancel Completo percibido)</span>
+              <span>Marcar consulta como abonada en el acto.</span>
             </label>
           </div>
         </div>

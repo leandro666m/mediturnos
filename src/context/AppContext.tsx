@@ -36,6 +36,7 @@ import {
 } from '../data/mockData';
 import {
   PortalAgendaPublicaResult,
+  PortalBuscarTurnosDniResult,
   PortalCancelarTurnoResult,
   PortalConfirmarTurnoResult,
   PortalHoldResult,
@@ -201,6 +202,7 @@ interface AppContextType {
     p_ip?: string;
   }) => Promise<PortalConfirmarTurnoResult>;
   portalVerTurno: (params: { p_token: string }) => Promise<PortalVerTurnoResult>;
+  portalBuscarTurnosDni: (params: { p_ref: string; p_dni: string }) => Promise<Appointment[]>;
   portalCancelarTurno: (params: {
     p_token: string;
     p_motivo?: string;
@@ -352,6 +354,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessio
     try {
       const saved = localStorage.getItem(`${STORAGE_KEY}_coverages`);
       let list: Coverage[] = saved ? JSON.parse(saved) : INITIAL_COVERAGES;
+      if (saved) {
+        const existingNames = new Set(list.map(coverage => coverage.nombre.trim().toLocaleLowerCase('es')));
+        list = [
+          ...list,
+          ...INITIAL_COVERAGES.filter(coverage => !existingNames.has(coverage.nombre.trim().toLocaleLowerCase('es'))),
+        ];
+      }
       // Migración Sección 2.2: Eliminar coberturas sembradas con tipo 'particular' o id 'cov-part'
       list = list.filter(c => c.tipo !== 'particular' && c.id !== 'cov-part');
       return list;
@@ -456,7 +465,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessio
         setWorkingHours(workspace.workingHours);
         setHolidays(workspace.holidays);
         setTimeOffs(workspace.timeOffs);
-        setCoverages(workspace.coverages);
+        // Las cuentas existentes pueden tener la tabla vacía: en ese caso
+        // arrancar con el catálogo común y dejar que la sincronización lo persista.
+        setCoverages(workspace.coverages.length ? workspace.coverages : INITIAL_COVERAGES.map((coverage, index) => ({
+          ...coverage,
+          // coberturas.id es UUID en Supabase; el catálogo demo usa IDs legibles
+          // para mantener compatibles las referencias de pacientes de demo.
+          id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        })));
         setPatients(workspace.patients);
         setAppointments(workspace.appointments);
         setNotes(workspace.notes);
@@ -1288,7 +1304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessio
           <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${new Date(t.inicio).toLocaleDateString('es-AR')} ${new Date(t.inicio).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</td>
           <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.modalidad}</td>
           <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.estado}</td>
-          <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.estadoPago === 'pagado' ? 'Pagado (Arancel Completo)' : 'Sin Pago'}</td>
+          <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${t.estadoPago === 'pagado' ? 'Pagado' : 'Sin Pago'}</td>
         </tr>
       `).join('')}
     </tbody>
@@ -1756,8 +1772,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessio
       datos_cobro: srv.precioCentavos > 0 && professional.aliasCobro ? {
         alias: professional.aliasCobro,
         titular: professional.titularCobro || professional.nombre,
+        banco: professional.banco || null,
+        cuit: professional.cuit || null,
       } : null,
     };
+  };
+
+  const portalBuscarTurnosDni = async (params: { p_ref: string; p_dni: string }): Promise<Appointment[]> => {
+    if (supabase && (initialProfessional || publicWorkspace)) {
+      const { data, error } = await supabase.rpc('portal_buscar_turnos_dni', params);
+      if (error) throw new Error(error.message);
+      const result = data as PortalBuscarTurnosDniResult;
+      return (result?.turnos || []).map(row => ({
+        id: row.id, professionalId: professional.id, patientId: '', serviceId: row.servicio_id,
+        locationId: row.sede_id || undefined, modalidad: row.modalidad, inicio: row.inicio, fin: row.fin,
+        estado: row.estado, estadoPago: row.estado_pago, precioCentavos: Number(row.precio_centavos),
+        origen: 'dashboard', esSobreturno: false, creadoEn: '', pacienteNombre: row.paciente_nombre,
+        pacienteDni: params.p_dni, pacienteTelefono: '', pacienteCobertura: 'Particular',
+      }));
+    }
+    const dni = params.p_dni.replace(/\D/g, '');
+    return appointments.filter(a => a.pacienteDni.replace(/\D/g, '') === dni);
   };
 
   const portalVerTurno = async (params: { p_token: string }): Promise<PortalVerTurnoResult> => {
@@ -2219,6 +2254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessio
         portalCrearHold,
         portalConfirmarTurno,
         portalVerTurno,
+        portalBuscarTurnosDni,
         portalCancelarTurno,
         portalReprogramarTurno,
         // Google Drive

@@ -49,7 +49,7 @@ export const MetricasTab: React.FC = () => {
     const tasaAusentismo = baseAsistencia > 0 ? ((ausentes / baseAsistencia) * 100).toFixed(1) : '0.0';
     const tasaAsistencia = baseAsistencia > 0 ? ((atendidos / baseAsistencia) * 100).toFixed(1) : '0.0';
 
-    // Financiero: Cobro de arancel completo
+    // Financiero: Cobro de arancel
     const turnosPagados = turnosFiltrados.filter(a => a.estadoPago === 'pagado');
     const totalRecaudadoCentavos = turnosPagados.reduce((sum, a) => sum + (a.precioCentavos || 0), 0);
 

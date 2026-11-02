@@ -44,6 +44,7 @@ import {
 } from '../../modules/messaging';
 import { generarArchivoIcs } from '../../modules/calendar';
 import { Appointment, HuecoDisponibilidad, Modalidad, Service } from '../../types';
+import { INITIAL_LOCATIONS } from '../../data/mockData';
 import { traducirErrorBase } from '../../data/mappers';
 import type { PortalVerTurnoResult } from '../../data/repository';
 
@@ -66,6 +67,7 @@ export const PatientPortal: React.FC = () => {
     portalCrearHold,
     portalConfirmarTurno,
     portalVerTurno,
+    portalBuscarTurnosDni,
     portalCancelarTurno,
     portalReprogramarTurno,
   } = useApp();
@@ -133,15 +135,15 @@ export const PatientPortal: React.FC = () => {
   // Turno confirmado (Paso 4)
   const [turnoConfirmado, setTurnoConfirmado] = useState<Appointment | null>(null);
 
-  // Estados de Pagos Digitales (Hito 2 - Arancel Completo)
+  // Estados de pagos digitales
   const [copiadoAlias, setCopiadoAlias] = useState(false);
-  const [copiadoCbu, setCopiadoCbu] = useState(false);
 
-  // Modal para consultar / autogestión de turnos reservados (Soporta búsqueda por DNI o Manage Token)
-  const [modalConsultarTurno, setModalConsultarTurno] = useState(false);
+  // Página de consulta y autogestión de turnos reservados
+  const [paginaConsultaTurno, setPaginaConsultaTurno] = useState(false);
   const [portalTurnoConsultado, setPortalTurnoConsultado] = useState<PortalVerTurnoResult | null>(null);
   const [dniConsulta, setDniConsulta] = useState('');
   const [dniPacienteConsultado, setDniPacienteConsultado] = useState<string | null>(null);
+  const [turnosDniConsultados, setTurnosDniConsultados] = useState<Appointment[]>([]);
   const [turnoSeleccionadoParaReprogramar, setTurnoSeleccionadoParaReprogramar] = useState<Appointment | null>(null);
   const [turnoSeleccionadoParaCancelar, setTurnoSeleccionadoParaCancelar] = useState<Appointment | null>(null);
   const [errorConsulta, setErrorConsulta] = useState('');
@@ -179,7 +181,8 @@ export const PatientPortal: React.FC = () => {
     const finMs = finHorizonte.getTime();
 
     // Turnos reservados = activos, no cancelados y no reprogramados dentro del horizonte
-    return appointments
+    const baseTurnos = turnosDniConsultados.length ? turnosDniConsultados : appointments;
+    return baseTurnos
       .filter(a => {
         if (a.pacienteDni !== dniPacienteConsultado) return false;
         if (a.estado === 'cancelado' || a.estado === 'reprogramado') return false;
@@ -187,7 +190,7 @@ export const PatientPortal: React.FC = () => {
         return appIni >= inicioMs && appIni <= finMs;
       })
       .sort((a, b) => new Date(a.inicio).getTime() - new Date(b.inicio).getTime());
-  }, [dniPacienteConsultado, appointments, horizonteDias]);
+  }, [dniPacienteConsultado, appointments, horizonteDias, turnosDniConsultados]);
 
   // Último turno agendado dentro del horizonte (único candidato a reprogramación si es Pendiente)
   const ultimoTurnoReservado = useMemo(() => {
@@ -204,10 +207,11 @@ export const PatientPortal: React.FC = () => {
   // Historial de otros turnos del paciente (anteriores o cancelados)
   const historialOtrosTurnos = useMemo(() => {
     if (!dniPacienteConsultado) return [];
-    return appointments.filter(
+    const baseTurnos = turnosDniConsultados.length ? turnosDniConsultados : appointments;
+    return baseTurnos.filter(
       a => a.pacienteDni === dniPacienteConsultado && !turnosConsultados.some(tc => tc.id === a.id)
     );
-  }, [dniPacienteConsultado, appointments, turnosConsultados]);
+  }, [dniPacienteConsultado, appointments, turnosConsultados, turnosDniConsultados]);
 
   // Vista en marco de celular vs full width
   const [modoMarcoMovil, setModoMarcoMovil] = useState(false);
@@ -287,6 +291,39 @@ export const PatientPortal: React.FC = () => {
 
   const diaActualObj = diasDisponibles.find(d => d.fecha === fechaSeleccionada);
 
+  const buscarTurnosPorDni = async () => {
+    const clean = dniConsulta.trim();
+    if (!clean) {
+      setErrorConsulta('Por favor ingresá tu DNI.');
+      return;
+    }
+    const dniEncontrado = clean.replace(/\D/g, '');
+    if (!dniEncontrado) {
+      setErrorConsulta('Ingresá un DNI válido para buscar tus turnos.');
+      setDniPacienteConsultado(null);
+      return;
+    }
+    setErrorConsulta('');
+    setMensajeExitoAutogestion(null);
+    setModoReprogramar(false);
+    setTurnoSeleccionadoParaReprogramar(null);
+    setMostrarModalCancelar(false);
+    setTurnoSeleccionadoParaCancelar(null);
+    try {
+      const turnos = await portalBuscarTurnosDni({ p_ref: professional.slug, p_dni: dniEncontrado });
+      setTurnosDniConsultados(turnos);
+      if (turnos.length === 0) {
+        setErrorConsulta(`No encontramos turnos registrados para el DNI ${dniEncontrado}.`);
+        setDniPacienteConsultado(null);
+        return;
+      }
+      setDniPacienteConsultado(dniEncontrado);
+    } catch (error: any) {
+      setErrorConsulta(traducirErrorBase(error?.message || 'No se pudieron consultar los turnos.'));
+      setDniPacienteConsultado(null);
+    }
+  };
+
   // Separar huecos en Mañana y Tarde
   const { huecosManana, huecosTarde } = useMemo(() => {
     if (!diaActualObj) return { huecosManana: [], huecosTarde: [] };
@@ -313,7 +350,7 @@ export const PatientPortal: React.FC = () => {
       if (appt) {
         setDniConsulta(appt.pacienteDni);
         setDniPacienteConsultado(appt.pacienteDni);
-        setModalConsultarTurno(true);
+        setPaginaConsultaTurno(true);
         setErrorConsulta('');
         return true;
       }
@@ -321,7 +358,7 @@ export const PatientPortal: React.FC = () => {
       if (res && res.turno_id) {
         setDniConsulta(cleanToken);
         setPortalTurnoConsultado(res);
-        setModalConsultarTurno(true);
+        setPaginaConsultaTurno(true);
         setDniPacienteConsultado(null);
         setErrorConsulta('');
         return true;
@@ -600,17 +637,6 @@ export const PatientPortal: React.FC = () => {
             </span>
           </button>
 
-          {!isInstalled && (
-            <button
-              type="button"
-              onClick={() => setMostrarAlertaInstalar(true)}
-              className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-medium shadow-2xs transition-colors cursor-pointer"
-              title="Instalar App en tu dispositivo"
-            >
-              <Download className="w-4 h-4 text-sky-600" />
-            </button>
-          )}
-
           <button
             onClick={() => setModoMarcoMovil(!modoMarcoMovil)}
             className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 font-medium shadow-2xs cursor-pointer"
@@ -668,19 +694,6 @@ export const PatientPortal: React.FC = () => {
                 <span className="text-xs sm:text-sm font-black tracking-tighter">aA</span>
               </button>
 
-              {/* Botón de instalar app - SOLO con el ícono (con confirmación al tocar) */}
-              {!isInstalled && (
-                <button
-                  type="button"
-                  onClick={() => setMostrarAlertaInstalar(true)}
-                  className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center border border-white/20 transition-all cursor-pointer shadow-xs"
-                  title="Instalar App"
-                  aria-label="Instalar App"
-                >
-                  <Download className="w-5 h-5 text-sky-200 hover:text-white" />
-                </button>
-              )}
-
               {/* Foto de perfil del profesional */}
               <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-white border border-white/20 shrink-0 overflow-hidden shadow-sm">
                 {professional.fotoPerfil ? (
@@ -730,7 +743,7 @@ export const PatientPortal: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                setModalConsultarTurno(true);
+                setPaginaConsultaTurno(true);
                 setErrorConsulta('');
                 setMensajeExitoAutogestion(null);
                 setModoReprogramar(false);
@@ -1477,11 +1490,6 @@ export const PatientPortal: React.FC = () => {
                   </p>
 
                   <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 mt-5 text-left text-xs space-y-2">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                      <span className="text-slate-500">Código de Turno:</span>
-                      <span className="font-mono font-bold text-slate-800 text-sm">#{turnoConfirmado.id.slice(4, 10).toUpperCase()}</span>
-                    </div>
-
                     <div className="flex justify-between">
                       <span className="text-slate-500">Profesional:</span>
                       <span className="font-semibold text-slate-800">{professional.titulo} {professional.nombre}</span>
@@ -1541,7 +1549,7 @@ export const PatientPortal: React.FC = () => {
                   </div>
 
                   {/* ========================================================
-                      DATOS DE TRANSFERENCIA Y ARANCEL COMPLETO
+                      DATOS DE TRANSFERENCIA
                      ======================================================== */}
                   <div className="mt-5 bg-gradient-to-br from-emerald-50/70 to-teal-50/50 border border-emerald-200/90 rounded-2xl p-4 sm:p-5 text-left shadow-2xs space-y-4">
                     <div className="flex items-start justify-between gap-3 pb-3 border-b border-emerald-200/70">
@@ -1551,7 +1559,7 @@ export const PatientPortal: React.FC = () => {
                         </div>
                         <div>
                           <h3 className="font-bold text-sm sm:text-base text-slate-900 leading-tight">
-                            Abonar Consulta — Arancel Completo (100%)
+                            Abonar Consulta
                           </h3>
                           <p className="text-[11px] text-slate-600 mt-0.5">
                             Pago previo requerido para confirmar y coordinar la atención
@@ -1559,33 +1567,31 @@ export const PatientPortal: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-[10px] font-bold uppercase text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full block mb-1">
-                          Arancel Completo
-                        </span>
                         <span className="text-base sm:text-lg font-black text-emerald-800 tabular-nums">
                           {formatearMoneda(turnoConfirmadoActual.precioCentavos)}
                         </span>
                       </div>
                     </div>
 
-                    {/* Datos de transferencia bancaria / Mercado Pago */}
+                    {/* Datos de transferencia */}
                     <div className="bg-white rounded-xl p-3.5 border border-emerald-200/80 text-xs space-y-2.5 shadow-2xs">
                       <div className="font-bold text-slate-800 text-[11px] uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Datos para transferir o pagar con Mercado Pago</span>
+                        <span>Datos para transferir</span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-1 gap-2 text-xs">
                         {/* Alias */}
                         <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-semibold uppercase">Alias</span>
-                            <span className="font-mono font-bold text-slate-900 text-xs">{professional.aliasCobro}</span>
+                            <span className="text-[10px] text-slate-400 block font-semibold uppercase">Alias de Cobro / CBU</span>
+                            <span className="font-mono font-bold text-slate-900 text-xs">{professional.aliasCobro || 'No informado'}</span>
                           </div>
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(professional.aliasCobro || '');
+                              if (!professional.aliasCobro) return;
+                              navigator.clipboard.writeText(professional.aliasCobro);
                               setCopiadoAlias(true);
                               setTimeout(() => setCopiadoAlias(false), 2500);
                             }}
@@ -1596,33 +1602,12 @@ export const PatientPortal: React.FC = () => {
                           </button>
                         </div>
 
-                        {/* CBU */}
-                        <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
-                          <div className="truncate mr-2">
-                            <span className="text-[10px] text-slate-400 block font-semibold uppercase">CBU / CVU</span>
-                            <span className="font-mono font-bold text-slate-900 text-[11px] truncate block">
-                              {professional.cbu || '0070012300000045892147'}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(professional.cbu || '0070012300000045892147');
-                              setCopiadoCbu(true);
-                              setTimeout(() => setCopiadoCbu(false), 2500);
-                            }}
-                            className="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs shrink-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                            <span>{copiadoCbu ? '¡Copiado!' : 'Copiar'}</span>
-                          </button>
-                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 gap-2">
-                        <span><strong>Titular:</strong> {professional.titularCobro}</span>
-                        <span><strong>Banco:</strong> {professional.banco || 'Banco Galicia / Mercado Pago'}</span>
-                        <span><strong>CUIT:</strong> {professional.cuit || '20-33894210-9'}</span>
+                        <span><strong>Titular de la cuenta:</strong> {professional.titularCobro || 'No informado'}</span>
+                        {professional.banco && <span><strong>Banco:</strong> {professional.banco}</span>}
+                        {professional.cuit && <span><strong>CUIT:</strong> {professional.cuit}</span>}
                       </div>
                     </div>
                   </div>
@@ -1675,48 +1660,6 @@ export const PatientPortal: React.FC = () => {
         )}
 
       </div>
-
-      {/* ALERTA DE CONFIRMACIÓN PARA INSTALAR LA APP (Regla: sólo ícono, alerta al tocar) */}
-      {mostrarAlertaInstalar && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-2xl bg-sky-100 text-sky-600 flex items-center justify-center mx-auto mb-3 shadow-inner">
-              <Download className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 text-center">
-              ¿Deseas instalar la App?
-            </h3>
-            <p className="text-xs text-slate-500 text-center mt-2 leading-relaxed">
-              Instalá MediTurnos en tu dispositivo para acceder rápidamente a tus turnos, recordatorios e información de contacto sin necesidad de abrir el navegador web.
-            </p>
-            <div className="mt-5 flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setMostrarAlertaInstalar(false)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  setMostrarAlertaInstalar(false);
-                  if (isInstallable) {
-                    const ok = await install();
-                    if (!ok) setMostrarGuiaPWA(true);
-                  } else {
-                    setMostrarGuiaPWA(true);
-                  }
-                }}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Sí, instalar</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL GUÍA MANUAL PARA INSTALAR PWA */}
       {mostrarGuiaPWA && (
@@ -1774,21 +1717,21 @@ export const PatientPortal: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL CONSULTAR TURNO (Autogestión de Pacientes) */}
-      {modalConsultarTurno && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 my-8 animate-in fade-in zoom-in-95 duration-150">
+      {/* Página de consulta y autogestión de turnos */}
+      {paginaConsultaTurno && (
+        <main className="fixed inset-0 z-50 min-h-screen overflow-y-auto bg-slate-50">
+          <div className="mx-auto min-h-screen w-full max-w-2xl bg-white px-4 py-5 sm:px-7 sm:py-7 shadow-sm">
             
-            {/* Header del Modal */}
+            {/* Encabezado de la página */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-5">
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
                   <Search className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-slate-900 leading-tight">
+                  <h1 className="font-bold text-base text-slate-900 leading-tight">
                     Consultar mi Turno
-                  </h3>
+                  </h1>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Verificá tu reserva y gestioná tus turnos
                   </p>
@@ -1797,7 +1740,7 @@ export const PatientPortal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setModalConsultarTurno(false);
+                  setPaginaConsultaTurno(false);
                   setDniPacienteConsultado(null);
                   setPortalTurnoConsultado(null);
                   setErrorConsulta('');
@@ -1806,9 +1749,10 @@ export const PatientPortal: React.FC = () => {
                   setMostrarModalCancelar(false);
                   setTurnoSeleccionadoParaCancelar(null);
                 }}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Volver al portal"
+                className="shrink-0 text-slate-600 hover:text-slate-900 p-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                ✕
+                <span className="inline-flex items-center gap-1 text-xs font-semibold"><ArrowLeft className="h-4 w-4" /> Volver</span>
               </button>
             </div>
 
@@ -1836,11 +1780,11 @@ export const PatientPortal: React.FC = () => {
               </div>
             )}
 
-            {/* Formulario de Búsqueda por DNI o Código */}
+            {/* Formulario de búsqueda por DNI */}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ingresá tu DNI (sin puntos) o código de turno
+                  Ingresá tu DNI (sin puntos)
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1850,102 +1794,18 @@ export const PatientPortal: React.FC = () => {
                     onKeyDown={e => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        const clean = dniConsulta.trim();
-                        if (!clean) {
-                          setErrorConsulta('Por favor ingresá tu DNI o código de turno.');
-                          return;
-                        }
-                        setErrorConsulta('');
-                        setMensajeExitoAutogestion(null);
-                        setModoReprogramar(false);
-                        setTurnoSeleccionadoParaReprogramar(null);
-                        setMostrarModalCancelar(false);
-                        setTurnoSeleccionadoParaCancelar(null);
-
-                        let dniEncontrado = '';
-                        const apptPorToken = appointments.find(
-                          a =>
-                            a.manageToken === clean ||
-                            a.id.toLowerCase() === clean.toLowerCase() ||
-                            a.id.slice(4).toLowerCase() === clean.replace('#', '').toLowerCase()
-                        );
-
-                        if (apptPorToken) {
-                          dniEncontrado = apptPorToken.pacienteDni;
-                        } else {
-                          const digits = clean.replace(/\D/g, '');
-                          if (digits) {
-                            dniEncontrado = digits;
-                          }
-                        }
-
-                        if (!dniEncontrado) {
-                          setErrorConsulta('No encontramos turnos con esos datos. Verificá el DNI o código ingresado.');
-                          setDniPacienteConsultado(null);
-                          return;
-                        }
-
-                        const delPaciente = appointments.filter(a => a.pacienteDni === dniEncontrado);
-                        if (delPaciente.length === 0) {
-                          setErrorConsulta(`No encontramos turnos registrados para el DNI ${dniEncontrado}.`);
-                          setDniPacienteConsultado(null);
-                          return;
-                        }
-
-                        setDniPacienteConsultado(dniEncontrado);
+                        void buscarTurnosPorDni();
                       }
                     }}
-                    placeholder="Ej. 32198540 o código de turno"
-                    className="flex-1 text-xs p-2.5 rounded-xl border border-slate-300 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 outline-none"
+                    placeholder="Ej. 32198540"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    className="min-w-0 flex-1 text-base sm:text-sm p-3 rounded-xl border border-slate-300 focus:border-sky-600 focus:ring-1 focus:ring-sky-600 outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const clean = dniConsulta.trim();
-                      if (!clean) {
-                        setErrorConsulta('Por favor ingresá tu DNI o código de turno.');
-                        return;
-                      }
-                      setErrorConsulta('');
-                      setMensajeExitoAutogestion(null);
-                      setModoReprogramar(false);
-                      setTurnoSeleccionadoParaReprogramar(null);
-                      setMostrarModalCancelar(false);
-                      setTurnoSeleccionadoParaCancelar(null);
-
-                      let dniEncontrado = '';
-                      const apptPorToken = appointments.find(
-                        a =>
-                          a.manageToken === clean ||
-                          a.id.toLowerCase() === clean.toLowerCase() ||
-                          a.id.slice(4).toLowerCase() === clean.replace('#', '').toLowerCase()
-                      );
-
-                      if (apptPorToken) {
-                        dniEncontrado = apptPorToken.pacienteDni;
-                      } else {
-                        const digits = clean.replace(/\D/g, '');
-                        if (digits) {
-                          dniEncontrado = digits;
-                        }
-                      }
-
-                      if (!dniEncontrado) {
-                        setErrorConsulta('No encontramos turnos con esos datos. Verificá el DNI o código ingresado.');
-                        setDniPacienteConsultado(null);
-                        return;
-                      }
-
-                      const delPaciente = appointments.filter(a => a.pacienteDni === dniEncontrado);
-                      if (delPaciente.length === 0) {
-                        setErrorConsulta(`No encontramos turnos registrados para el DNI ${dniEncontrado}.`);
-                        setDniPacienteConsultado(null);
-                        return;
-                      }
-
-                      setDniPacienteConsultado(dniEncontrado);
-                    }}
-                    className="px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                    onClick={() => void buscarTurnosPorDni()}
+                    className="min-h-11 px-4 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
                   >
                     <Search className="w-3.5 h-3.5" />
                     <span>Buscar</span>
@@ -2079,7 +1939,7 @@ export const PatientPortal: React.FC = () => {
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Arancel Completo:</span>
+                                  <span className="text-slate-400 block text-[11px]">Importe:</span>
                                   <span className="font-bold text-slate-900 tabular-nums">
                                     {formatearMoneda(appt.precioCentavos)}
                                   </span>
@@ -2154,7 +2014,7 @@ export const PatientPortal: React.FC = () => {
                                     </span>
                                   </div>
 
-                                  {dentroDePlazo ? (
+                                  {dentroDePlazo && appt.manageToken ? (
                                     <div className="space-y-2.5">
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         {/* Botón Reprogramar: SOLO SI ES EL ÚLTIMO Y DE ESTADO PENDIENTE */}
@@ -2603,7 +2463,9 @@ export const PatientPortal: React.FC = () => {
                                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
                                       <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                                       <span>
-                                        El plazo límite para cancelar o reprogramar online ({plazoHs} hs previas) ha vencido. Por favor contactate por WhatsApp con el consultorio.
+                                        {dentroDePlazo
+                                          ? 'Para solicitar un cambio o cancelar este turno, contactate por WhatsApp con el consultorio.'
+                                          : `El plazo límite para cancelar o reprogramar online (${plazoHs} hs previas) ha vencido. Por favor contactate por WhatsApp con el consultorio.`}
                                       </span>
                                     </div>
                                   )}
@@ -2637,7 +2499,7 @@ export const PatientPortal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    setModalConsultarTurno(false);
+                    setPaginaConsultaTurno(false);
                     setDniPacienteConsultado(null);
                     setErrorConsulta('');
                     setModoReprogramar(false);
@@ -2647,14 +2509,13 @@ export const PatientPortal: React.FC = () => {
                   }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
                 >
-                  Cerrar
+                  Volver al portal
                 </button>
               </div>
 
             </div>
-
           </div>
-        </div>
+        </main>
       )}
 
     </div>

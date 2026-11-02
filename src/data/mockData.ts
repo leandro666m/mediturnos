@@ -110,13 +110,28 @@ export const INITIAL_PROFESSIONAL: Professional = {
 };
 
 export const INITIAL_COVERAGES: Coverage[] = [
+  // Catálogo inicial orientativo basado en agentes del RNAS (SSSalud).
+  // Cada profesional puede agregar coberturas propias desde el dashboard.
   { id: 'cov-osde', nombre: 'OSDE', tipo: 'prepaga' },
   { id: 'cov-swiss', nombre: 'Swiss Medical', tipo: 'prepaga' },
   { id: 'cov-galeno', nombre: 'Galeno', tipo: 'prepaga' },
   { id: 'cov-medife', nombre: 'Medifé', tipo: 'prepaga' },
+  { id: 'cov-accord', nombre: 'Accord Salud', tipo: 'prepaga' },
+  { id: 'cov-omint', nombre: 'OMINT', tipo: 'prepaga' },
+  { id: 'cov-sancor', nombre: 'Sancor Salud', tipo: 'prepaga' },
+  { id: 'cov-prevencion', nombre: 'Prevención Salud', tipo: 'prepaga' },
+  { id: 'cov-hominis', nombre: 'Hominis', tipo: 'prepaga' },
   { id: 'cov-ioma', nombre: 'IOMA', tipo: 'obra_social' },
   { id: 'cov-pami', nombre: 'PAMI', tipo: 'obra_social' },
   { id: 'cov-osecac', nombre: 'OSECAC', tipo: 'obra_social' },
+  { id: 'cov-ospedyc', nombre: 'OSPEDYC', tipo: 'obra_social' },
+  { id: 'cov-ospjn', nombre: 'OSPJN', tipo: 'obra_social' },
+  { id: 'cov-osdepym', nombre: 'OSDEPYM', tipo: 'obra_social' },
+  { id: 'cov-osuthgra', nombre: 'OSUTHGRA', tipo: 'obra_social' },
+  { id: 'cov-ospital', nombre: 'OSPITAL', tipo: 'obra_social' },
+  { id: 'cov-osep', nombre: 'OSEP', tipo: 'obra_social' },
+  { id: 'cov-iapos', nombre: 'IAPOS', tipo: 'obra_social' },
+  { id: 'cov-ips', nombre: 'IPS', tipo: 'obra_social' },
   { id: 'cov-otra', nombre: 'Otra / Reintegro', tipo: 'otro' },
 ];
 
