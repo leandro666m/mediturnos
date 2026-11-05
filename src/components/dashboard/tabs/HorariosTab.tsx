@@ -483,6 +483,26 @@ export const HorariosTab: React.FC = () => {
       return t;
     });
 
+    if (!actualizadas.some(t => t.tipo === 'confirmacion')) {
+      actualizadas.push({
+        id: createDataId('tpl_confirm'),
+        professionalId: professional.id,
+        tipo: 'confirmacion',
+        cuerpo: tplConfirmacion,
+        bloquePresencial,
+        bloqueVideollamada,
+      });
+    }
+    if (!actualizadas.some(t => t.tipo === 'recordatorio')) {
+      actualizadas.push({
+        id: createDataId('tpl_record'),
+        professionalId: professional.id,
+        tipo: 'recordatorio',
+        cuerpo: tplRecordatorio,
+        bloquePresencial: bloquePresencialRec,
+        bloqueVideollamada: bloqueVideollamadaRec,
+      });
+    }
     if (!actualizadas.some(t => t.tipo === 'reprogramacion')) {
       actualizadas.push({
         id: createDataId('tpl_reprog'),

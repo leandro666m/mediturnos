@@ -26,7 +26,11 @@ import {
   formatearMoneda,
 } from '../../../modules/format';
 import {
+  BLOQUE_PRESENCIAL_DEFAULT,
+  BLOQUE_VIDEOLLAMADA_DEFAULT,
   construirEnlaceWhatsApp,
+  CUERPO_CONFIRMACION_DEFAULT,
+  CUERPO_RECORDATORIO_DEFAULT,
   prepararVariablesDesdeTurno,
   resolverPlantillaMensaje,
 } from '../../../modules/messaging';
@@ -176,16 +180,25 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
   // Manejo de envío manual de WhatsApp (Confirmar / Recordar)
   const handleEnviarWhatsApp = (turno: Appointment, tipo: 'confirmacion' | 'recordatorio') => {
     const tpl = templates.find(t => t.tipo === tipo);
+    const cuerpoDefault = tipo === 'confirmacion'
+      ? CUERPO_CONFIRMACION_DEFAULT
+      : CUERPO_RECORDATORIO_DEFAULT;
+    const plantillaDisponible = tpl?.cuerpo?.trim() ? tpl : undefined;
     const srv = services.find(s => s.id === turno.serviceId);
     const dir = locations.find(l => l.id === turno.locationId);
 
     const variables = prepararVariablesDesdeTurno(turno, professional, srv, dir?.direccion, dir?.mapsUrl);
     const textoMensaje = resolverPlantillaMensaje(
-      tpl?.cuerpo || '',
-      tpl?.bloquePresencial || '',
-      tpl?.bloqueVideollamada || '',
+      plantillaDisponible?.cuerpo || cuerpoDefault,
+      plantillaDisponible?.bloquePresencial || BLOQUE_PRESENCIAL_DEFAULT,
+      plantillaDisponible?.bloqueVideollamada || BLOQUE_VIDEOLLAMADA_DEFAULT,
       variables
     );
+
+    if (!textoMensaje.trim()) {
+      alert('La plantilla de WhatsApp está vacía. Revisá la configuración de mensajes.');
+      return;
+    }
 
     const { url, valido } = construirEnlaceWhatsApp(turno.pacienteTelefono, textoMensaje);
     if (!valido || !url) {
