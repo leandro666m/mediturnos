@@ -1516,6 +1516,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialProfessio
           nombre: s.nombre,
           descripcion: s.descripcion || null,
           duracion_min: s.duracionMin,
+          mostrar_duracion: s.mostrarDuracion ?? true,
           modalidad: mod,
           arancel_centavos: s.mostrarPrecio ? s.precioCentavos : null,
           moneda: s.moneda || 'ARS',

@@ -102,6 +102,7 @@ export interface DbServicio {
   duracion_min: number;
   arancel_centavos: number;
   mostrar_precio: boolean;
+  mostrar_duracion?: boolean;
   moneda: string;
   modalidad: DbModalidadAtencion;
   orden: number;
@@ -451,6 +452,7 @@ export function serviceToDb(s: Service, profesionalId: string): DbServicio {
     duracion_min: s.duracionMin,
     arancel_centavos: s.precioCentavos,
     mostrar_precio: s.mostrarPrecio,
+    mostrar_duracion: s.mostrarDuracion ?? true,
     moneda: s.moneda || 'ARS',
     modalidad: mod,
     orden: s.orden ?? 0,
@@ -475,6 +477,7 @@ export function serviceFromDb(d: DbServicio): Service {
     duracionMin: d.duracion_min,
     precioCentavos: d.arancel_centavos,
     mostrarPrecio: d.mostrar_precio,
+    mostrarDuracion: d.mostrar_duracion ?? true,
     modalidades,
     activo: d.activo,
     moneda: d.moneda,

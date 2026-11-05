@@ -870,12 +870,12 @@ export const PatientPortal: React.FC = () => {
                                 {srv.descripcion}
                               </p>
 
-                              <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs text-slate-600">
+                              {srv.mostrarDuracion !== false && <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs text-slate-600">
                                 <span className="flex items-center gap-1 font-medium bg-slate-100 px-2 py-0.5 rounded-md">
                                   <Clock className="w-3 h-3 text-slate-500" />
                                   <span>{srv.duracionMin} min</span>
                                 </span>
-                              </div>
+                              </div>}
                             </div>
 
                             <div className="text-right shrink-0">
@@ -906,7 +906,7 @@ export const PatientPortal: React.FC = () => {
                     <div>
                       <span className="text-slate-500">Consulta:</span>{' '}
                       <strong className="text-slate-900">{servicioSeleccionado?.nombre}</strong>
-                      <span className="text-slate-500 ml-1.5">({servicioSeleccionado?.duracionMin} min)</span>
+                      {servicioSeleccionado?.mostrarDuracion !== false && <span className="text-slate-500 ml-1.5">({servicioSeleccionado?.duracionMin} min)</span>}
                     </div>
                     <button
                       onClick={() => setPaso(1)}

@@ -151,6 +151,7 @@ create table if not exists public.servicios (
   duracion_min     int  not null,
   arancel_centavos bigint not null default 0,
   mostrar_precio   boolean not null default true,
+  mostrar_duracion boolean not null default true,
   moneda           char(3) not null default 'ARS',
   modalidad        public.modalidad_atencion not null,
   orden            int not null default 0,
@@ -751,7 +752,7 @@ begin
     'servicios', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', s.id, 'nombre', s.nombre, 'descripcion', s.descripcion,
-        'duracion_min', s.duracion_min, 'modalidad', s.modalidad,
+        'duracion_min', s.duracion_min, 'mostrar_duracion', s.mostrar_duracion, 'modalidad', s.modalidad,
         'arancel_centavos', case when s.mostrar_precio then s.arancel_centavos end,
         'moneda', s.moneda) order by s.orden, s.nombre)
       from public.servicios s where s.profesional_id = v_prof.id and s.activo), '[]'::jsonb),

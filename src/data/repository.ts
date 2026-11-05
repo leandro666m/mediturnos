@@ -62,6 +62,7 @@ export interface PortalAgendaPublicaResult {
     nombre: string;
     descripcion?: string | null;
     duracion_min: number;
+    mostrar_duracion: boolean;
     modalidad: DbModalidadAtencion;
     arancel_centavos: number | null; // null si mostrar_precio = false
     moneda: string;

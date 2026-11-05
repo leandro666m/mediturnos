@@ -72,6 +72,7 @@ export function SupabasePublicPortalGate({ children }: {
           id: row.id, nombre: row.nombre, descripcion: row.descripcion || '',
           duracionMin: row.duracion_min, precioCentavos: row.arancel_centavos || 0,
           mostrarPrecio: row.arancel_centavos !== null, modalidades: [...modalidades],
+          mostrarDuracion: row.mostrar_duracion ?? true,
           activo: true, moneda: row.moneda,
         };
       });

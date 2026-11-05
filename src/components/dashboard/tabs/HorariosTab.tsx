@@ -898,6 +898,7 @@ export const HorariosTab: React.FC = () => {
                     duracionMin: 30,
                     precioCentavos: 2000000,
                     mostrarPrecio: true,
+                    mostrarDuracion: true,
                     activo: true,
                   })
                 }
@@ -1924,6 +1925,15 @@ export const HorariosTab: React.FC = () => {
                     className="rounded text-sky-600"
                   />
                   <span>Mostrar precio al paciente en el portal</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer mt-2">
+                  <input
+                    type="checkbox"
+                    checked={modalServicio.mostrarDuracion ?? true}
+                    onChange={e => setModalServicio({ ...modalServicio, mostrarDuracion: e.target.checked })}
+                    className="rounded text-sky-600"
+                  />
+                  <span>Mostrar el tiempo del servicio al paciente en el portal</span>
                 </label>
               </div>
             </div>

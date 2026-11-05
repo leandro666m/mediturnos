@@ -21,6 +21,7 @@ export interface Service {
   duracionMin: number;
   precioCentavos: number;
   mostrarPrecio: boolean;
+  mostrarDuracion?: boolean;
   modalidades?: Modalidad[];
   activo: boolean;
   moneda?: string; // Default 'ARS'
