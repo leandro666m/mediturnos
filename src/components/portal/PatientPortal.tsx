@@ -394,7 +394,7 @@ export const PatientPortal: React.FC = () => {
         p_servicio_id: servicioSeleccionado.id,
         p_inicio: huecoSeleccionado.inicio,
         p_modalidad: modalidadElegida,
-        p_sede_id: modalidadElegida === 'presencial' ? (direccionElegidaId || consultorioPresencial.id || undefined) : undefined,
+        p_sede_id: modalidadElegida === 'presencial' ? (direccionElegidaId || consultorioPresencial.id || null) : null,
         p_session_id: sessionToken,
       });
 
@@ -2425,7 +2425,7 @@ export const PatientPortal: React.FC = () => {
                                                   p_servicio_id: appt.serviceId,
                                                   p_inicio: huecoReprogramar.inicio,
                                                   p_modalidad: modalidadReprogramar,
-                                                  p_sede_id: modalidadReprogramar === 'presencial' ? (sedeReprogramarId || consultorioReprogPresencial.id) : undefined,
+                                                  p_sede_id: modalidadReprogramar === 'presencial' ? (sedeReprogramarId || consultorioReprogPresencial.id || null) : null,
                                                   p_session_id: sessionToken,
                                                 });
 

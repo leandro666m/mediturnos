@@ -183,7 +183,7 @@ interface AppContextType {
     p_servicio_id: string;
     p_inicio: string;
     p_modalidad: Modalidad;
-    p_sede_id?: string;
+    p_sede_id: string | null;
     p_session_id: string;
     p_ip?: string;
   }) => Promise<PortalHoldResult>;
