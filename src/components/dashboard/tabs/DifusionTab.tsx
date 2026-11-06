@@ -105,7 +105,7 @@ export const DifusionTab: React.FC = () => {
           </div>
           <div>
             <h4 className="font-bold text-sm">
-              {professional.agendaPausada ? 'Agenda Online Pausada' : 'Agenda Online Abierta y Activa'}
+              {professional.agendaPausada ? 'Agenda online pausada' : 'Agenda online abierta y activa'}
             </h4>
             <p className="text-xs text-slate-500">
               {professional.agendaPausada
@@ -123,7 +123,7 @@ export const DifusionTab: React.FC = () => {
               : 'bg-amber-600 text-white hover:bg-amber-700 shadow-xs'
           }`}
         >
-          {professional.agendaPausada ? 'Reanudar Agenda' : 'Pausar Agenda Online'}
+          {professional.agendaPausada ? 'Reanudar agenda' : 'Pausar agenda online'}
         </button>
       </div>
 
@@ -136,7 +136,7 @@ export const DifusionTab: React.FC = () => {
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
             <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
               <Share2 className="w-4 h-4 text-sky-600" />
-              <span>Tu Enlace de Reserva Online</span>
+              <span>Tu enlace de reserva online</span>
             </h3>
 
             <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
@@ -238,7 +238,7 @@ export const DifusionTab: React.FC = () => {
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs text-center space-y-4">
             <h3 className="font-bold text-sm text-slate-900 flex items-center justify-center gap-2">
               <QrCode className="w-4 h-4 text-sky-600" />
-              <span>Código QR de tu Consultorio</span>
+              <span>Código QR de tu consultorio</span>
             </h3>
 
             {/* Visualización del QR */}
@@ -265,7 +265,7 @@ export const DifusionTab: React.FC = () => {
                 className="w-full py-2.5 px-4 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 transition-all shadow-xs flex items-center justify-center gap-1.5"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Descargar Imagen PNG</span>
+                <span>Descargar imagen PNG</span>
               </button>
 
               <button
@@ -273,7 +273,7 @@ export const DifusionTab: React.FC = () => {
                 className="w-full py-2.5 px-4 bg-white border border-slate-200 text-slate-800 rounded-xl text-xs font-semibold hover:bg-slate-50 transition-all shadow-2xs flex items-center justify-center gap-1.5"
               >
                 <Printer className="w-3.5 h-3.5 text-slate-600" />
-                <span>Ver Cartel A4 para Sala de Espera</span>
+                <span>Ver cartel A4 para sala de espera</span>
               </button>
             </div>
           </div>
@@ -329,7 +329,7 @@ export const DifusionTab: React.FC = () => {
                 onClick={() => window.print()}
                 className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 flex items-center gap-2 shadow-xs"
               >
-                <Printer className="w-4 h-4" /> Imprimir Cartel
+                <Printer className="w-4 h-4" /> Imprimir cartel
               </button>
             </div>
 

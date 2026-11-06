@@ -48,7 +48,7 @@ export const PWAInstallBanner: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-teal-300 bg-teal-900/50 px-2 py-0.5 rounded-full border border-teal-500/30 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> PWA Móvil & Tablet
+                <Sparkles className="w-3 h-3" /> PWA móvil y tablet
               </span>
               <span className="text-xs text-sky-200">Acceso directo en tu dispositivo</span>
             </div>
@@ -64,7 +64,7 @@ export const PWAInstallBanner: React.FC = () => {
         <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0 justify-end">
           <PWAInstallButton
             variant="primary"
-            label="Instalar Aplicación"
+            label="Instalar aplicación"
             className="w-full sm:w-auto justify-center"
           />
           <button

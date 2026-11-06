@@ -772,7 +772,7 @@ export const PatientPortal: React.FC = () => {
         {professional.agendaPausada ? (
           <div className="p-8 text-center text-slate-600">
             <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-slate-800">Agenda Pausada</h3>
+            <h3 className="text-lg font-bold text-slate-800">Agenda pausada</h3>
             <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
               El profesional no está recibiendo nuevas reservas online en este momento. Los turnos ya reservados se mantienen sin cambios.
             </p>
@@ -1241,7 +1241,7 @@ export const PatientPortal: React.FC = () => {
                       <span className="font-semibold text-slate-800">{servicioSeleccionado?.nombre}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Fecha y Hora:</span>
+                      <span className="text-slate-500">Fecha y hora:</span>
                       <span className="font-semibold text-slate-800">
                         {huecoSeleccionado && formatearFechaLarga(huecoSeleccionado.inicio)} a las {huecoSeleccionado && formatearHora(huecoSeleccionado.inicio)}
                       </span>
@@ -1294,7 +1294,7 @@ export const PatientPortal: React.FC = () => {
                   <form onSubmit={handleConfirmarReserva} className="space-y-3.5">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Nombre y Apellido *
+                        Nombre y apellido *
                       </label>
                       <input
                         type="text"
@@ -1381,7 +1381,7 @@ export const PatientPortal: React.FC = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Cobertura Médica / Obra Social
+                          Cobertura médica / obra social
                         </label>
                         <select
                           value={coberturaId}
@@ -1401,7 +1401,7 @@ export const PatientPortal: React.FC = () => {
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Plan o Nº Afiliado (opcional)
+                          Plan o nº de afiliado (opcional)
                         </label>
                         <input
                           type="text"
@@ -1501,7 +1501,7 @@ export const PatientPortal: React.FC = () => {
                     </div>
 
                     <div className="flex justify-between">
-                      <span className="text-slate-500">Fecha y Hora:</span>
+                      <span className="text-slate-500">Fecha y hora:</span>
                       <span className="font-semibold text-slate-800">
                         {formatearFechaLarga(turnoConfirmado.inicio)} · {formatearHora(turnoConfirmado.inicio)}
                       </span>
@@ -1559,7 +1559,7 @@ export const PatientPortal: React.FC = () => {
                         </div>
                         <div>
                           <h3 className="font-bold text-sm sm:text-base text-slate-900 leading-tight">
-                            Abonar Consulta
+                            Abonar consulta
                           </h3>
                           <p className="text-[11px] text-slate-600 mt-0.5">
                             Pago previo requerido para confirmar y coordinar la atención
@@ -1584,7 +1584,7 @@ export const PatientPortal: React.FC = () => {
                         {/* Alias */}
                         <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-semibold uppercase">Alias de Cobro / CBU</span>
+                            <span className="text-[10px] text-slate-400 block font-semibold uppercase">Alias de cobro / CBU</span>
                             <span className="font-mono font-bold text-slate-900 text-xs">{professional.aliasCobro || 'No informado'}</span>
                           </div>
                           <button
@@ -1635,7 +1635,7 @@ export const PatientPortal: React.FC = () => {
                       className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-2xs transition-all"
                     >
                       <CalendarPlus className="w-4 h-4 text-sky-600" />
-                      <span>Agregar a mi Calendario (.ics)</span>
+                      <span>Agregar a mi calendario (.ics)</span>
                     </button>
                   </div>
 
@@ -1730,7 +1730,7 @@ export const PatientPortal: React.FC = () => {
                 </div>
                 <div>
                   <h1 className="font-bold text-base text-slate-900 leading-tight">
-                    Consultar mi Turno
+                    Consultar mi turno
                   </h1>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Verificá tu reserva y gestioná tus turnos
@@ -1921,7 +1921,7 @@ export const PatientPortal: React.FC = () => {
                               {/* Datos del turno */}
                               <div className="grid grid-cols-2 gap-2 text-slate-700">
                                 <div>
-                                  <span className="text-slate-400 block text-[11px]">Fecha y Hora:</span>
+                                  <span className="text-slate-400 block text-[11px]">Fecha y hora:</span>
                                   <span className="font-semibold text-slate-900">
                                     {formatearFechaLarga(appt.inicio)} · {formatearHora(appt.inicio)}
                                   </span>
@@ -1994,13 +1994,13 @@ export const PatientPortal: React.FC = () => {
 
                               {/* Estado del Pago */}
                               <div className="p-3 bg-white rounded-xl border border-slate-200 flex justify-between items-center">
-                                <span className="font-bold text-slate-800">Estado del Pago:</span>
+                                <span className="font-bold text-slate-800">Estado del pago:</span>
                                 <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                                   appt.estadoPago === 'pagado'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : 'bg-amber-100 text-amber-800'
                                 }`}>
-                                  {appt.estadoPago === 'pagado' ? 'PAGADO ✓' : 'PENDIENTE DE PAGO'}
+                                  {appt.estadoPago === 'pagado' ? 'Pagado ✓' : 'Pendiente de pago'}
                                 </span>
                               </div>
 
@@ -2037,8 +2037,8 @@ export const PatientPortal: React.FC = () => {
                                             <Clock className="w-3.5 h-3.5 text-amber-700" />
                                             <span>
                                               {modoReprogramar && turnoSeleccionadoParaReprogramar?.id === appt.id
-                                                ? 'Ocultar Reprogramación'
-                                                : 'Reprogramar Turno (Último)'}
+                                                ? 'Ocultar reprogramación'
+                                                : 'Reprogramar turno (último)'}
                                             </span>
                                           </button>
                                         ) : (
@@ -2067,7 +2067,7 @@ export const PatientPortal: React.FC = () => {
                                           className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
                                         >
                                           <X className="w-3.5 h-3.5 text-rose-600" />
-                                          <span>Cancelar Turno</span>
+                                          <span>Cancelar turno</span>
                                         </button>
                                       </div>
 
@@ -2106,7 +2106,7 @@ export const PatientPortal: React.FC = () => {
                                               }}
                                               className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer"
                                             >
-                                              Confirmar Cancelación
+                                              Confirmar cancelación
                                             </button>
                                             <button
                                               type="button"
@@ -2454,7 +2454,7 @@ export const PatientPortal: React.FC = () => {
                                             }`}
                                           >
                                             <Check className="w-3.5 h-3.5" />
-                                            <span>Confirmar Cambio de Turno</span>
+                                            <span>Confirmar cambio de turno</span>
                                           </button>
                                         </div>
                                       )}

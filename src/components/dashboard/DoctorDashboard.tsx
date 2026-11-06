@@ -97,7 +97,7 @@ export const DoctorDashboard: React.FC = () => {
                   <button
                     onClick={() => setModalPerfilAbierto(true)}
                     className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                    title="Editar Perfil y Configuración"
+                    title="Editar perfil y configuración"
                   >
                     <Settings className="w-4 h-4" />
                   </button>
@@ -149,7 +149,7 @@ export const DoctorDashboard: React.FC = () => {
             {/* Acciones Rápidas del Header */}
             <div className="flex flex-wrap items-center gap-2.5">
               {/* Instalar App PWA */}
-              <PWAInstallButton variant="outline" label="Instalar App" />
+              <PWAInstallButton variant="outline" label="Instalar app" />
 
               {/* Ver portal como paciente */}
               <button
@@ -192,7 +192,7 @@ export const DoctorDashboard: React.FC = () => {
                 }`}
             >
               <Calendar className="w-4 h-4" />
-              <span>Agenda & Turnos</span>
+              <span>Agenda y turnos</span>
             </button>
 
             <button
@@ -214,7 +214,7 @@ export const DoctorDashboard: React.FC = () => {
                 }`}
             >
               <Users className="w-4 h-4" />
-              <span>Pacientes y Notas</span>
+              <span>Pacientes y notas</span>
             </button>
 
             <button
@@ -225,7 +225,7 @@ export const DoctorDashboard: React.FC = () => {
                 }`}
             >
               <Clock className="w-4 h-4" />
-              <span>Horarios & Especialidad</span>
+              <span>Horarios y especialidad</span>
             </button>
 
             <button
@@ -247,7 +247,7 @@ export const DoctorDashboard: React.FC = () => {
                 }`}
             >
               <TrendingUp className="w-4 h-4" />
-              <span>Métricas & Reportes</span>
+              <span>Métricas y reportes</span>
             </button>
           </div>
 

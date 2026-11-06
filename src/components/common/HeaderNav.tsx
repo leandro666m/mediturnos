@@ -48,7 +48,7 @@ export const HeaderNav: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">
-                Turnero Digital para Especialistas de la Salud
+                Turnero para especialistas de la salud
               </p>
             </div>
           </div>
@@ -64,7 +64,7 @@ export const HeaderNav: React.FC = () => {
               }`}
             >
               <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Dashboard Profesional</span>
+              <span>Dashboard profesional</span>
             </button>
             <button
               onClick={() => setActiveZone('portal')}
@@ -75,7 +75,7 @@ export const HeaderNav: React.FC = () => {
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
-              <span>Portal Paciente</span>
+              <span>Portal paciente</span>
             </button>
           </div>
 
@@ -104,11 +104,11 @@ export const HeaderNav: React.FC = () => {
                 className="hidden md:flex items-center gap-1 px-2 py-1 text-slate-400 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-medium"
               >
                 <CloudOff className="w-3 h-3 text-slate-400" />
-                <span>Modo Local</span>
+                <span>Modo local</span>
               </div>
             )}
 
-            <PWAInstallButton variant="outline" label="Instalar App" className="hidden sm:flex" />
+            <PWAInstallButton variant="outline" label="Instalar app" className="hidden sm:flex" />
 
             <div className="hidden lg:flex flex-col text-right">
               <span className="text-xs font-bold text-slate-900">

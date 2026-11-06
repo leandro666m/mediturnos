@@ -118,7 +118,7 @@ export const MetricasTab: React.FC = () => {
                 <TrendingUp className="w-5 h-5" />
               </div>
               <h2 className="text-lg font-bold text-slate-900">
-                Métricas, Rendimiento y Finanzas
+                Métricas, rendimiento y finanzas
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -183,7 +183,7 @@ export const MetricasTab: React.FC = () => {
         {/* Recaudado Total */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Cobrado</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total cobrado</span>
             <span className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
               <DollarSign className="w-4 h-4" />
             </span>
@@ -199,7 +199,7 @@ export const MetricasTab: React.FC = () => {
         {/* Pendiente de Cobro */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pendiente Cobro</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pendiente cobro</span>
             <span className="p-1.5 bg-amber-50 text-amber-600 rounded-lg">
               <Clock className="w-4 h-4" />
             </span>
@@ -215,7 +215,7 @@ export const MetricasTab: React.FC = () => {
         {/* Tasa de Asistencia */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Asistencia Efectiva</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Asistencia efectiva</span>
             <span className="p-1.5 bg-sky-50 text-sky-600 rounded-lg">
               <CalendarCheck className="w-4 h-4" />
             </span>
@@ -231,7 +231,7 @@ export const MetricasTab: React.FC = () => {
         {/* Tasa de Ausentismo (No-Show) */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tasa Ausentismo</span>
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Tasa ausentismo</span>
             <span className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
               <AlertOctagon className="w-4 h-4" />
             </span>
@@ -254,7 +254,7 @@ export const MetricasTab: React.FC = () => {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                Canal de Cobro y Transferencia Bancaria
+                Canal de cobro y transferencia bancaria
               </h3>
               <p className="text-xs text-slate-600 mt-0.5">
                 Datos de cuenta informados a los pacientes para abonar el arancel de las consultas.
@@ -278,7 +278,7 @@ export const MetricasTab: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <CalendarCheck className="w-4 h-4 text-sky-600" />
-              <span>Demanda por Servicio / Prestación</span>
+              <span>Demanda por servicio / prestación</span>
             </h3>
             <span className="text-xs text-slate-400 font-medium">
               {metricas.rankingServicios.length} activos
@@ -318,7 +318,7 @@ export const MetricasTab: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Users className="w-4 h-4 text-sky-600" />
-              <span>Distribución por Obra Social / Particular</span>
+              <span>Distribución por obra social / particular</span>
             </h3>
             <span className="text-xs text-slate-400 font-medium">
               {metricas.rankingCoberturas.length} coberturas
@@ -360,7 +360,7 @@ export const MetricasTab: React.FC = () => {
         {/* Modalidades */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Modalidades de Atención</span>
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Modalidades de atención</span>
             <div className="flex items-center gap-4 mt-2">
               <div className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold">
                 <MapPin className="w-4 h-4 text-sky-600" />
@@ -380,19 +380,19 @@ export const MetricasTab: React.FC = () => {
         {/* Resumen de Estados */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Ciclo de Vida</span>
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Ciclo de vida</span>
             <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
               <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
-                {metricas.atendidos} Atendidos
+                {metricas.atendidos} atendidos
               </span>
               <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
-                {metricas.pendientes} Pendientes
+                {metricas.pendientes} pendientes
               </span>
               <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 border border-rose-200 font-semibold">
-                {metricas.ausentes} Ausentes
+                {metricas.ausentes} ausentes
               </span>
               <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 font-semibold">
-                {metricas.cancelados} Cancelados
+                {metricas.cancelados} cancelados
               </span>
             </div>
           </div>

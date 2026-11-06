@@ -258,7 +258,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
               : 'bg-white border-slate-200 hover:border-slate-300'
           }`}
         >
-          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Turnos Hoy</div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Turnos de hoy</div>
           <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">{contadoresHoy.total}</div>
           <div className="text-[11px] text-slate-400 mt-0.5">Agendados para la fecha</div>
         </div>
@@ -359,13 +359,13 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
             className="text-xs bg-white border border-slate-200 rounded-lg py-2 px-2.5 text-slate-800 font-medium shrink-0 cursor-pointer"
           >
             <option value="todos">Todos los estados</option>
-            <option value="pendiente">Solo Pendientes</option>
-            <option value="atendido">Solo Atendidos</option>
-            <option value="ausente">Solo Ausentes</option>
-            <option value="cancelado">Solo Cancelados</option>
-            <option value="reprogramado">Solo Reprogramados</option>
+            <option value="pendiente">Solo pendientes</option>
+            <option value="atendido">Solo atendidos</option>
+            <option value="ausente">Solo ausentes</option>
+            <option value="cancelado">Solo cancelados</option>
+            <option value="reprogramado">Solo reprogramados</option>
             <option value="sin_pago">Pendientes de cobro</option>
-            <option value="pagado">Con Pago Confirmado</option>
+            <option value="pagado">Con pago confirmado</option>
           </select>
 
           <div className="relative flex-1">
@@ -470,7 +470,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                           {turno.modalidad === 'presencial' ? (
                             <>
                               <MapPin className="w-3.5 h-3.5 text-sky-600" />
-                              <span>{loc?.nombre || 'Consultorio Presencial'}</span>
+                              <span>{loc?.nombre || 'Consultorio presencial'}</span>
                             </>
                           ) : (
                             <>
@@ -512,7 +512,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                         onChange={e => setAppointmentPayment(turno.id, e.target.checked)}
                         className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                       />
-                      <span>{estaPagado ? 'Pagado/Confirmado ✓' : 'Pagado/Confirmado'}</span>
+                      <span>{estaPagado ? 'Pagado/confirmado ✓' : 'Pagado/confirmado'}</span>
                     </label>
 
                     {/* Botón WhatsApp Confirmar */}
@@ -614,7 +614,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <RefreshCw className="w-4 h-4 text-sky-600" />
-                  <span>Reprogramar Turno</span>
+                  <span>Reprogramar turno</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Los nuevos horarios están sujetos a las disponibilidades cargadas en <strong>Horarios & Especialidad</strong>.
@@ -651,7 +651,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-slate-700">
-                    Nueva Fecha *
+                    Nueva fecha *
                   </label>
                   {/* Atajos de Fecha */}
                   <div className="flex items-center gap-1">
@@ -775,7 +775,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
               {/* Nueva Hora con Validación en Tiempo Real */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Hora de Inicio *
+                  Hora de inicio *
                 </label>
                 <input
                   type="time"
@@ -819,7 +819,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                     }}
                     className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
                   />
-                  <span>Habilitar como Sobreturno / Excepción de agenda</span>
+                  <span>Habilitar como sobreturno / excepción de agenda</span>
                 </label>
                 {esSobreturnoReprog && (
                   <p className="text-[11px] text-amber-700 mt-1 pl-1">
@@ -837,7 +837,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
               )}
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600">
-                Al confirmar, el turno original pasará a estado <strong>Reprogramado</strong> y quedará vinculado al nuevo horario.
+                Al confirmar, el turno original pasará a estado <strong>reprogramado</strong> y quedará vinculado al nuevo horario.
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -861,7 +861,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                       : 'bg-sky-600 text-white hover:bg-sky-700 cursor-pointer'
                   }`}
                 >
-                  Confirmar Reprogramación
+                  Confirmar reprogramación
                 </button>
               </div>
             </form>

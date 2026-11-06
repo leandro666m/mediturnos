@@ -650,7 +650,7 @@ export const HorariosTab: React.FC = () => {
             subTab === 'horarios' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Días y Horarios
+          Días y horarios
         </button>
         <button
           onClick={() => setSubTab('servicios')}
@@ -658,7 +658,7 @@ export const HorariosTab: React.FC = () => {
             subTab === 'servicios' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Servicios y Precios
+          Servicios y precios
         </button>
         <button
           onClick={() => setSubTab('whatsapp')}
@@ -666,7 +666,7 @@ export const HorariosTab: React.FC = () => {
             subTab === 'whatsapp' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Mensajes WhatsApp
+          Mensajes de WhatsApp
         </button>
         <button
           onClick={() => setSubTab('parametros')}
@@ -674,7 +674,7 @@ export const HorariosTab: React.FC = () => {
             subTab === 'parametros' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Parámetros Globales
+          Parámetros globales
         </button>
         <button
           onClick={() => setSubTab('feriados')}
@@ -682,7 +682,7 @@ export const HorariosTab: React.FC = () => {
             subTab === 'feriados' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Feriados Nacionales
+          Feriados nacionales
         </button>
       </div>
 
@@ -707,7 +707,7 @@ export const HorariosTab: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
             <h3 className="text-sm font-bold text-slate-900 mb-1">
-              Esquema Semanal de Atención
+              Esquema semanal de atención
             </h3>
             <p className="text-xs text-slate-500 mb-4">
               Configurá las franjas de cada día y su modalidad obligatoria (Presencial, Videollamada o Ambas).
@@ -798,8 +798,8 @@ export const HorariosTab: React.FC = () => {
                                     }
                                     className="bg-white border border-slate-300 focus:border-sky-600 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 outline-none cursor-pointer shadow-2xs"
                                   >
-                                    <option value="presencial">Solo Presencial</option>
-                                    <option value="videollamada">Solo Videollamada</option>
+                                    <option value="presencial">Solo presencial</option>
+                                    <option value="videollamada">Solo videollamada</option>
                                     <option value="ambas">Ambas modalidades</option>
                                   </select>
                                 </div>
@@ -882,7 +882,7 @@ export const HorariosTab: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Servicios y Aranceles Profesionales
+                  Servicios y aranceles profesionales
                 </h3>
                 <p className="text-xs text-slate-500">
                   Definí las prestaciones, duración y precios visibles a los pacientes.
@@ -904,7 +904,7 @@ export const HorariosTab: React.FC = () => {
                 }
                 className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-bold hover:bg-sky-700 flex items-center gap-1 shadow-2xs"
               >
-                <Plus className="w-3.5 h-3.5" /> Agregar Servicio
+                <Plus className="w-3.5 h-3.5" /> Agregar servicio
               </button>
             </div>
 
@@ -956,7 +956,7 @@ export const HorariosTab: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Plantillas de Mensajería WhatsApp (I-06)
+                  Plantillas de mensajería WhatsApp (I-06)
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Personalizá los textos de confirmación y recordatorio. Se resuelven con datos reales del turno y se abren directamente en WhatsApp.
@@ -969,7 +969,7 @@ export const HorariosTab: React.FC = () => {
                 className="px-5 py-2 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 shadow-xs transition-all self-start sm:self-auto shrink-0 flex items-center gap-1.5"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>Guardar Plantillas</span>
+                <span>Guardar plantillas</span>
               </button>
             </div>
 
@@ -1452,7 +1452,7 @@ export const HorariosTab: React.FC = () => {
                 className="px-6 py-2.5 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 shadow-xs transition-all flex items-center gap-1.5"
               >
                 <Check className="w-3.5 h-3.5" />
-                <span>Guardar Plantillas de WhatsApp</span>
+                <span>Guardar plantillas de WhatsApp</span>
               </button>
             </div>
           </div>
@@ -1465,7 +1465,7 @@ export const HorariosTab: React.FC = () => {
       {subTab === 'parametros' && (
         <form onSubmit={handleGuardarParametros} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs max-w-2xl space-y-4">
           <h3 className="text-sm font-bold text-slate-900 pb-2 border-b border-slate-100">
-            Parámetros Globales de la Agenda
+            Parámetros globales de la agenda
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1570,7 +1570,7 @@ export const HorariosTab: React.FC = () => {
               type="submit"
               className="px-5 py-2 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700"
             >
-              Guardar Configuración
+              Guardar configuración
             </button>
           </div>
         </form>
@@ -1585,7 +1585,7 @@ export const HorariosTab: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-sky-600" />
-                <span>Feriados Nacionales y Días No Laborables</span>
+                <span>Feriados nacionales y días no laborables</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Por defecto los feriados bloquean las reservas en el portal del paciente. Habilitá individualmente como <strong className="text-emerald-700">"Laborable"</strong> aquellos días en los que desees atender con normalidad.
@@ -1615,7 +1615,7 @@ export const HorariosTab: React.FC = () => {
                 className="px-3 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Agregar Feriado / Asueto</span>
+                <span>Agregar feriado / asueto</span>
               </button>
             </div>
           </div>
@@ -1791,7 +1791,7 @@ export const HorariosTab: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
               <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4 text-sky-600" />
-                <span>Nuevo Feriado o Asueto</span>
+                <span>Nuevo feriado o asueto</span>
               </h4>
               <button
                 type="button"
@@ -1804,7 +1804,7 @@ export const HorariosTab: React.FC = () => {
 
             <form onSubmit={handleCrearFeriadoPersonalizado} className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nombre o Motivo *</label>
+                <label className="block font-semibold text-slate-700 mb-1">Nombre o motivo *</label>
                 <input
                   type="text"
                   required
@@ -1857,7 +1857,7 @@ export const HorariosTab: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-700 shadow-xs transition-colors cursor-pointer"
                 >
-                  Guardar Feriado
+                  Guardar feriado
                 </button>
               </div>
             </form>
@@ -1870,7 +1870,7 @@ export const HorariosTab: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
             <h3 className="font-bold text-base text-slate-900 mb-3">
-              {services.some(s => s.id === modalServicio.id) ? 'Editar Servicio' : 'Nuevo Servicio'}
+              {services.some(s => s.id === modalServicio.id) ? 'Editar servicio' : 'Nuevo servicio'}
             </h3>
 
             <div className="space-y-3 text-xs">
@@ -1906,7 +1906,7 @@ export const HorariosTab: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Valor en Pesos</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Valor en pesos</label>
                   <input
                     type="number"
                     value={modalServicio.precioCentavos === '' ? '' : (modalServicio.precioCentavos ?? 2000000) / 100}

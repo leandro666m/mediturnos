@@ -26,7 +26,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
     
   }
 
-  const defaultLabel = label || (isMobileOrTablet ? 'Instalar App' : 'Instalar en Móvil / PC');
+  const defaultLabel = label || (isMobileOrTablet ? 'Instalar app' : 'Instalar en móvil o PC');
 
   const handleClick = async () => {
     if (isInstallable) {
@@ -77,7 +77,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                 </div>
                 <div>
                   <h3 className="font-bold text-base text-slate-900">
-                    Instalar MediTurnos Profesional
+                    Instalar MediTurnos profesional
                   </h3>
                   <p className="text-xs text-slate-500">
                     Accedé a tu agenda como una app nativa
@@ -107,7 +107,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
                     </div>
                     <div>
                       <span className="text-xs font-bold text-slate-800 block">
-                        Tocá el botón Compartir
+                        Tocá el botón compartir
                       </span>
                       <span className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
                         Es el ícono <Share className="w-3.5 h-3.5 text-sky-600 inline" /> en la barra inferior de Safari.

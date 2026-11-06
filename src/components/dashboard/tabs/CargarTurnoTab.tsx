@@ -220,7 +220,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <User className="w-4 h-4 text-sky-600" />
-              <span>1. Datos del Paciente</span>
+              <span>1. Datos del paciente</span>
             </h3>
             {pacienteEncontrado && (
               <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
@@ -247,7 +247,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nombre y Apellido completo *
+                Nombre y apellido completo *
               </label>
               <input
                 type="text"
@@ -295,14 +295,14 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-sky-600" />
-              <span>2. Datos del Turno y Horario</span>
+              <span>2. Datos del turno y horario</span>
             </h3>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Servicio / Consulta *
+                Servicio / consulta *
               </label>
               <select
                 value={servicioId}
@@ -334,7 +334,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             {modalidad === 'presencial' && (
               <div className="sm:col-span-3">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Consultorio / Ubicación
+                  Consultorio / ubicación
                 </label>
                 <select
                   value={locationId}
@@ -353,7 +353,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-700">
-                  Fecha del Turno *
+                  Fecha del turno *
                 </label>
                 <div className="flex items-center gap-1">
                   <button
@@ -423,7 +423,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Hora de Inicio *
+                Hora de inicio *
               </label>
               <input
                 type="time"
@@ -488,7 +488,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                   }}
                   className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
                 />
-                <span>Habilitar como Sobreturno</span>
+                <span>Habilitar como sobreturno</span>
               </label>
             </div>
           </div>
@@ -521,7 +521,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                  Horarios libres según 'Horarios & Especialidad' ({disponibilidadDia.slots.length} disponibles):
+                  Horarios libres según 'Horarios y especialidad' ({disponibilidadDia.slots.length} disponibles):
                 </span>
               </div>
               {disponibilidadDia.slots.length > 0 ? (
@@ -562,7 +562,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-3">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-sky-600" />
-              <span>3. Cobertura Médica y Motivo</span>
+              <span>3. Cobertura médica y motivo</span>
             </h3>
           </div>
 
@@ -570,7 +570,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-semibold text-slate-700">
-                  Obra Social / Prepaga
+                  Obra social / prepaga
                 </label>
                 <button
                   type="button"
@@ -625,7 +625,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nº de Afiliado
+                Nº de afiliado
               </label>
               <input
                 type="text"
@@ -656,7 +656,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
           <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-emerald-600" />
-              <span>4. Cobro del Arancel</span>
+              <span>4. Cobro del arancel</span>
             </h3>
             <span className="text-xs font-black text-emerald-800 tabular-nums bg-emerald-100 px-2.5 py-0.5 rounded-full">
               {formatearMoneda(servicioSeleccionado ? servicioSeleccionado.precioCentavos : 0)}
@@ -696,7 +696,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
               <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-sky-600" />
-                <span>Agregar Obra Social / Prepaga</span>
+                <span>Agregar obra social / prepaga</span>
               </h4>
               <button
                 type="button"
@@ -710,7 +710,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nombre de la Obra Social / Prepaga *
+                  Nombre de la obra social / prepaga *
                 </label>
                 <input
                   type="text"
@@ -748,7 +748,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
                 onClick={handleGuardarNuevaCobertura}
                 className="px-4 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-700 shadow-xs transition-colors cursor-pointer"
               >
-                Guardar y Seleccionar
+                Guardar y seleccionar
               </button>
             </div>
           </div>

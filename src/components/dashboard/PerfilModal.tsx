@@ -369,7 +369,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="block font-semibold text-slate-700 mb-1">Nombre y Apellido</label>
+              <label className="block font-semibold text-slate-700 mb-1">Nombre y apellido</label>
               <input
                 type="text"
                 value={nombre}
@@ -391,7 +391,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Matrícula Nacional (M.N.)</label>
+              <label className="block font-semibold text-slate-700 mb-1">Matrícula nacional (M.N.)</label>
               <input
                 type="text"
                 value={mn}
@@ -400,7 +400,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Matrícula Provincial (M.P.)</label>
+              <label className="block font-semibold text-slate-700 mb-1">Matrícula provincial (M.P.)</label>
               <input
                 type="text"
                 value={mp}
@@ -459,7 +459,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-sky-600" />
                 <h4 className="font-bold text-slate-900 text-xs sm:text-sm">
-                  Direcciones de Atención (Consultorios y Sedes)
+                  Direcciones de atención (consultorios y sedes)
                 </h4>
               </div>
               {modoEdicionLocId === null && (
@@ -493,8 +493,8 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                     <Building2 className="w-3.5 h-3.5 text-sky-600" />
                     <span>
                       {modoEdicionLocId === 'nueva'
-                        ? 'Agregar Nueva Dirección'
-                        : 'Modificar Dirección de Atención'}
+                        ? 'Agregar nueva dirección'
+                        : 'Modificar dirección de atención'}
                     </span>
                   </span>
                   <button
@@ -768,11 +768,11 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
           <div className="pt-2 border-t border-slate-100">
             <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
               <CreditCard className="w-4 h-4 text-emerald-600" />
-              <span>Datos de Cobro (se insertan en WhatsApp)</span>
+              <span>Datos de cobro (se insertan en WhatsApp)</span>
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Alias de Cobro / CBU</label>
+                <label className="block font-semibold text-slate-700 mb-1">Alias de cobro / CBU</label>
                 <input
                   type="text"
                   value={alias}
@@ -832,7 +832,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
                 <Type className="w-4 h-4 text-sky-600" />
-                <h4 className="font-bold text-slate-900">Tamaño del Texto</h4>
+                <h4 className="font-bold text-slate-900">Tamaño del texto</h4>
               </div>
               <span className="text-[11px] font-semibold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-100">
                 {tamanoTexto === 'minimo' && 'Tamaño: Compacto (Mínimo)'}
@@ -936,7 +936,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                   <FolderOpen className="w-3.5 h-3.5" />
                 </div>
                 <h4 className="font-bold text-slate-900 text-xs sm:text-sm">
-                  Base de Datos & Sincronización en Google Drive
+                  Base de datos y sincronización en Google Drive
                 </h4>
               </div>
               <span
@@ -946,7 +946,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
                     : 'bg-slate-100 text-slate-500 border-slate-200'
                 }`}
               >
-                {isDriveConnected ? 'Conectado a Google Drive' : 'Modo Local (Sin Conexión Cloud)'}
+                {isDriveConnected ? 'Conectado a Google Drive' : 'Modo local (sin conexión cloud)'}
               </span>
             </div>
 
@@ -1119,7 +1119,7 @@ export const PerfilModal: React.FC<PerfilModalProps> = ({ isOpen, onClose }) => 
               type="submit"
               className="px-5 py-2.5 bg-sky-600 text-white rounded-xl text-xs font-bold hover:bg-sky-700 shadow-xs cursor-pointer"
             >
-              Guardar Cambios
+              Guardar cambios
             </button>
           </div>
 
