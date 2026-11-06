@@ -68,7 +68,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
   const [motivo, setMotivo] = useState('');
 
   // Bloque 4: Cobro de Arancel
-  const [marcarPagadoCompleto, setMarcarPagadoCompleto] = useState(false);
+  const [marcarPagadoConfirmado, setMarcarPagadoConfirmado] = useState(false);
 
   // Modal para Agregar Obra Social / Prepaga
   const [mostrarModalAgregarCobertura, setMostrarModalAgregarCobertura] = useState(false);
@@ -190,7 +190,7 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
       motivo,
       origen: 'dashboard',
       esSobreturno,
-      estadoPago: marcarPagadoCompleto ? 'pagado' : 'sin_pago',
+      estadoPago: marcarPagadoConfirmado ? 'pagado' : 'sin_pago',
     });
 
     if (res.success) {
@@ -667,8 +667,8 @@ export const CargarTurnoTab: React.FC<CargarTurnoTabProps> = ({ onTurnoAgendado 
             <label className="flex items-center gap-2.5 text-xs text-slate-800 font-semibold cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={marcarPagadoCompleto}
-                onChange={e => setMarcarPagadoCompleto(e.target.checked)}
+                checked={marcarPagadoConfirmado}
+                onChange={e => setMarcarPagadoConfirmado(e.target.checked)}
                 className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               />
               <span>Marcar consulta como abonada en el acto.</span>

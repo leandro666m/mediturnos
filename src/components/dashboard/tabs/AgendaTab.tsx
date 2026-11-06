@@ -512,7 +512,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({ onVerFichaPaciente, onCarg
                         onChange={e => setAppointmentPayment(turno.id, e.target.checked)}
                         className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                       />
-                      <span>{estaPagado ? 'Pagado ✓' : 'Marcar Pagado'}</span>
+                      <span>{estaPagado ? 'Pagado/Confirmado ✓' : 'Pagado/Confirmado'}</span>
                     </label>
 
                     {/* Botón WhatsApp Confirmar */}
